@@ -1,0 +1,50 @@
+{
+  "monthly": [
+    { "id": "2026-01", "label": "Jan", "labelLong": "Januari 2026", "revenue": 560000000, "hpp": 128000000, "opex": 227000000, "netProfit": 205000000 },
+    { "id": "2026-02", "label": "Feb", "labelLong": "Februari 2026", "revenue": 580000000, "hpp": 133000000, "opex": 235000000, "netProfit": 212000000 },
+    { "id": "2026-03", "label": "Mar", "labelLong": "Maret 2026", "revenue": 640000000, "hpp": 149000000, "opex": 263000000, "netProfit": 228000000 },
+    { "id": "2026-04", "label": "Apr", "labelLong": "April 2026", "revenue": 610000000, "hpp": 141000000, "opex": 249000000, "netProfit": 220000000 },
+    { "id": "2026-05", "label": "Mei", "labelLong": "Mei 2026", "revenue": 690000000, "hpp": 158000000, "opex": 286000000, "netProfit": 246000000 },
+    { "id": "2026-06", "label": "Jun", "labelLong": "Juni 2026", "revenue": 720000000, "hpp": 166000000, "opex": 302000000, "netProfit": 252000000 },
+    { "id": "2026-07", "label": "Jul", "labelLong": "Juli 2026", "revenue": 760000000, "hpp": 176000000, "opex": 326000000, "netProfit": 258000000 },
+    { "id": "2026-08", "label": "Ags", "labelLong": "Agustus 2026", "revenue": 738000000, "hpp": 171000000, "opex": 318000000, "netProfit": 249000000 },
+    { "id": "2026-09", "label": "Sep", "labelLong": "September 2026", "revenue": 842500000, "hpp": 195400000, "opex": 382600000, "netProfit": 264500000 }
+  ],
+  "meta": {
+    "periodLabel": "September 2026",
+    "periodStatus": "OPEN",
+    "revenueMix": { "jasaMedis": 78, "produk": 22 },
+    "grossMarginBenchmark": 72,
+    "netTargetDeltaPct": 8.5,
+    "autoSyncMinutes": 2,
+    "brands": [
+      { "name": "Dentico Dental Care (A)", "amount": 480000000, "color": "primary" },
+      { "name": "Dentico Smile Aesthetic (B)", "amount": 262500000, "color": "secondary" },
+      { "name": "Dentico Kids Ortho (C)", "amount": 100000000, "color": "tertiary" }
+    ],
+    "branches": [
+      { "rank": 1, "name": "Yogyakarta - Gejayan", "amount": 320000000 },
+      { "rank": 2, "name": "Jakarta - Senopati", "amount": 310000000 },
+      { "rank": 3, "name": "Surabaya - Gubeng", "amount": 212500000 }
+    ],
+    "branchCount": 5,
+    "topExpenses": [
+      { "code": "6001", "name": "Jasa Medis Dokter", "amount": 142000000 },
+      { "code": "6102", "name": "Gaji Perawat", "amount": 88500000 },
+      { "code": "6501", "name": "Biaya Iklan Meta", "amount": 34200000 },
+      { "code": "6201", "name": "Listrik", "amount": 18400000 },
+      { "code": "6301", "name": "Service Dental Unit", "amount": 12000000 }
+    ],
+    "pipeline": {
+      "draftCount": 2,
+      "draftAmount": 8650000,
+      "reviewCount": 1,
+      "reviewAmount": 12400000,
+      "postedCount": 318,
+      "lockedPeriod": "Agustus 2026",
+      "reconMatchedPct": 98.4,
+      "reconDiffAmount": 0,
+      "reconPendingCount": 2
+    }
+  }
+}

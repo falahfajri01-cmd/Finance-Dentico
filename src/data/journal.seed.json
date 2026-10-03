@@ -1,0 +1,154 @@
+[
+  {
+    "id": "j-0142",
+    "number": "JV/2026/09/0142",
+    "date": "2026-09-30",
+    "type": "JP",
+    "brand": "Brand A",
+    "branch": "Yogyakarta - Gejayan",
+    "reference": "INV-8812",
+    "description": "Penerimaan pembayaran tindakan bleaching & penambalan pasien drg. Anisa",
+    "total": 1500000,
+    "status": "POSTED",
+    "operatorName": "Falah",
+    "operatorRole": "Staff",
+    "operatorInitials": "FL",
+    "lines": [
+      { "accountCode": "1103", "accountName": "Bank BSI", "memo": "Penerimaan transfer QRIS pasien", "debit": 1500000, "credit": 0 },
+      { "accountCode": "4101", "accountName": "Pendapatan Jasa", "memo": "Pendapatan tindakan medis klinik", "debit": 0, "credit": 1500000 }
+    ]
+  },
+  {
+    "id": "j-0141",
+    "number": "JV/2026/09/0141",
+    "date": "2026-09-30",
+    "type": "JB",
+    "brand": "Brand B",
+    "branch": "Jakarta Selatan",
+    "reference": "PO-MED-441",
+    "description": "Pembelian bahan medis & resin komposit dari vendor utama",
+    "total": 12400000,
+    "status": "REVIEW",
+    "operatorName": "Dimas",
+    "operatorRole": "Staff",
+    "operatorInitials": "DM",
+    "lines": [
+      { "accountCode": "1107", "accountName": "Persediaan Bahan Medis", "memo": "Restock BMHP bulan September", "debit": 12400000, "credit": 0 },
+      { "accountCode": "2101", "accountName": "Utang Usaha", "memo": "Termin 30 hari vendor", "debit": 0, "credit": 12400000 }
+    ]
+  },
+  {
+    "id": "j-0140",
+    "number": "JV/2026/09/0140",
+    "date": "2026-09-29",
+    "type": "ADJ",
+    "brand": "Brand A",
+    "branch": "Yogyakarta - Gejayan",
+    "reference": "ADJ-USE-09",
+    "description": "Penyesuaian pemakaian BMHP periode September berdasarkan stock opname",
+    "total": 4250000,
+    "status": "POSTED",
+    "operatorName": "Nabila",
+    "operatorRole": "Finance Lead",
+    "operatorInitials": "NB",
+    "lines": [
+      { "accountCode": "5101", "accountName": "Pemakaian Bahan Medis", "memo": "Beban pemakaian bahan habis pakai", "debit": 4250000, "credit": 0 },
+      { "accountCode": "1107", "accountName": "Persediaan Bahan Medis", "memo": "Pengurangan persediaan hasil opname", "debit": 0, "credit": 4250000 }
+    ]
+  },
+  {
+    "id": "j-0139",
+    "number": "JV/2026/09/0139",
+    "date": "2026-09-29",
+    "type": "JU",
+    "brand": "Brand A",
+    "branch": "Surabaya Timur",
+    "reference": "REK-09",
+    "description": "Koreksi saldo kas kecil cabang Surabaya hasil rekonsiliasi internal",
+    "total": 850000,
+    "status": "DRAFT",
+    "operatorName": "Falah",
+    "operatorRole": "Staff",
+    "operatorInitials": "FL",
+    "lines": [
+      { "accountCode": "1101", "accountName": "Kas Kecil", "memo": "Penyesuaian saldo kas kecil", "debit": 850000, "credit": 0 },
+      { "accountCode": "1104", "accountName": "Bank Mandiri", "memo": "Transfer pengisian kas kecil", "debit": 0, "credit": 850000 }
+    ]
+  },
+  {
+    "id": "j-0120",
+    "number": "JV/2026/09/0120",
+    "date": "2026-09-28",
+    "type": "KK",
+    "brand": "Dentico Core",
+    "branch": "Consolidated HO",
+    "reference": "EXP-6201",
+    "description": "Pembayaran tagihan listrik & utilitas 5 cabang periode September",
+    "total": 5000000,
+    "status": "POSTED",
+    "operatorName": "Falah",
+    "operatorRole": "Staff",
+    "operatorInitials": "FL",
+    "lines": [
+      { "accountCode": "6201", "accountName": "Listrik", "memo": "Alokasi utilitas seluruh cabang", "debit": 5000000, "credit": 0 },
+      { "accountCode": "1104", "accountName": "Bank Mandiri", "memo": "Autodebet tagihan PLN & PDAM", "debit": 0, "credit": 5000000 }
+    ]
+  },
+  {
+    "id": "j-0118",
+    "number": "JV/2026/09/0118",
+    "date": "2026-09-27",
+    "type": "KM",
+    "brand": "Brand A",
+    "branch": "Yogyakarta - Gejayan",
+    "reference": "DEP-2210",
+    "description": "Uang muka pasien paket ortho 12 sesi atas nama Ratna P.",
+    "total": 6000000,
+    "status": "POSTED",
+    "operatorName": "Sinta",
+    "operatorRole": "Kasir",
+    "operatorInitials": "ST",
+    "lines": [
+      { "accountCode": "1103", "accountName": "Bank BSI", "memo": "Settlement QRIS dinamis kasir pasien", "debit": 6000000, "credit": 0 },
+      { "accountCode": "2109", "accountName": "Pendapatan Diterima Dimuka", "memo": "Deposit paket ortho 12 sesi", "debit": 0, "credit": 6000000 }
+    ]
+  },
+  {
+    "id": "j-0136",
+    "number": "JV/2026/09/0136",
+    "date": "2026-09-29",
+    "type": "JU",
+    "brand": "Dentico Core",
+    "branch": "Consolidated HO",
+    "reference": "PAY-MDR-09",
+    "description": "Akrual biaya MDR QRIS minggu IV atas net settlement BSI",
+    "total": 2150000,
+    "status": "APPROVED",
+    "operatorName": "Nabila",
+    "operatorRole": "Finance Lead",
+    "operatorInitials": "NB",
+    "lines": [
+      { "accountCode": "6402", "accountName": "Biaya Merchant QRIS", "memo": "MDR 0.7% gross QRIS minggu IV", "debit": 2150000, "credit": 0 },
+      { "accountCode": "1103", "accountName": "Bank BSI", "memo": "Net-off settlement BSI", "debit": 0, "credit": 2150000 }
+    ]
+  },
+  {
+    "id": "j-0135",
+    "number": "JV/2026/09/0135",
+    "date": "2026-09-28",
+    "type": "JB",
+    "brand": "Brand B",
+    "branch": "Jakarta Selatan",
+    "reference": "PO-LAB-118",
+    "description": "Pembelian cetakan aligner lab dental pihak ketiga (draft input Dimas)",
+    "total": 7800000,
+    "status": "DRAFT",
+    "operatorName": "Dimas",
+    "operatorRole": "Staff",
+    "operatorInitials": "DM",
+    "lines": [
+      { "accountCode": "6003", "accountName": "Biaya Cetak Lab", "memo": "Cetakan aligner 26 unit", "debit": 7800000, "credit": 0 },
+      { "accountCode": "2101", "accountName": "Utang Usaha", "memo": "Invoice lab termin 14 hari", "debit": 0, "credit": 7800000 }
+    ]
+  }
+]

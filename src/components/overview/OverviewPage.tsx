@@ -40,7 +40,9 @@ function matchesBranch(filter: string, j: Journal): boolean {
   return tokens.every((t) => scope.includes(t));
 }
 
-function periodOf(date: string): string | null {
+type PnlMonthId = "2026-09" | "2026-08" | "2026-07";
+
+function periodOf(date: string): PnlMonthId | null {
   if (date.startsWith("2026-09")) return "2026-09";
   if (date.startsWith("2026-08")) return "2026-08";
   if (date.startsWith("2026-07")) return "2026-07";
@@ -146,7 +148,7 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
     }
     // Scoped: compute perfectly identical to P&L
     const current = buildPnlMonth(period);
-    const mIds: ("2026-07" | "2026-08" | "2026-09")[] = ["2026-07", "2026-08", "2026-09"];
+    const mIds: PnlMonthId[] = ["2026-07", "2026-08", "2026-09"];
     const monthly = mIds.map((id) => buildPnlMonth(id as any));
 
     let prev: { data: FinanceMonth; label: string } | null = null;

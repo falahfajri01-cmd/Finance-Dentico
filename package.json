@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "db:seed": "node scripts/generate-seed-sql.mjs && node scripts/generate-finance-seed-sql.mjs && node scripts/generate-journal-seed-sql.mjs && node scripts/generate-ledger-seed-sql.mjs && node scripts/generate-pnl-seed-sql.mjs",
+    "db:install": "npm run db:seed && node scripts/build-install-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",

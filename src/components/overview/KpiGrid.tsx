@@ -30,7 +30,6 @@ export default function KpiGrid({ current, prev, meta }: KpiGridProps) {
   const hppRatio = (current.hpp / current.revenue) * 100;
   const opexRatio = (current.opex / current.revenue) * 100;
   const netMargin = (current.netProfit / current.revenue) * 100;
-  const grossMargin = (gross / current.revenue) * 100;
 
   const revDelta = prev ? fmtDelta(current.revenue, prev.data.revenue) : "+0%";
   const revDeltaUp = prev ? current.revenue >= prev.data.revenue : true;

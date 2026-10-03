@@ -107,10 +107,27 @@ create table if not exists public.journal_lines (
   account_name text not null,
   memo         text not null default '',
   debit        numeric not null default 0,
-  credit       numeric not null default 0
+  credit       numeric not null default 0,
+  -- Natural key so re-running install.sql replaces lines instead of
+  -- duplicating them (the bare `id` uuid can never conflict).
+  unique (journal_id, line_no)
 );
 
 create index if not exists journal_lines_journal_idx on public.journal_lines (journal_id);
+
+-- `create table if not exists` above is a no-op when the table already exists,
+-- so an older install would never pick up the (journal_id, line_no) unique
+-- key. Add it separately when missing — without this, re-running install.sql
+-- would duplicate every journal line.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'journal_lines_journal_id_line_no_key'
+  ) then
+    alter table public.journal_lines
+      add constraint journal_lines_journal_id_line_no_key unique (journal_id, line_no);
+  end if;
+end $$;
 
 alter table public.journals enable row level security;
 drop policy if exists "journals rw" on public.journals;

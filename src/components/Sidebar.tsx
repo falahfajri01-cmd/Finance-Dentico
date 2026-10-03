@@ -7,6 +7,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "../utils/cn";
+import { supabaseProjectRef, SUPABASE_TABLE } from "../lib/supabase";
 
 export interface NavItem {
   path: string;
@@ -189,7 +190,7 @@ export default function Sidebar({ activePath, onNavigate, source, onClose }: Sid
               {source === "supabase" ? "Supabase Sinkron" : "Database Sinkron"}
             </span>
             <span className="truncate text-[10px] text-body-sm text-on-surface-variant">
-              {source === "supabase" ? "PostgreSQL · coa_accounts" : "Demo lokal · hubungkan Supabase"}
+              {source === "supabase" ? `Supabase · ${supabaseProjectRef || SUPABASE_TABLE}` : "Demo lokal · hubungkan Supabase"}
             </span>
           </div>
           <Database size={14} className="ml-auto shrink-0 text-outline" />

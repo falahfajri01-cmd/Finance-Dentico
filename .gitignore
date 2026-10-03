@@ -1,5 +1,9 @@
-.next
 node_modules/
 dist/
 out/
 .env
+.env.local
+.env.*.local
+
+# Supabase CLI / local stack artefacts
+.supabase/

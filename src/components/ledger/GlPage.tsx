@@ -1113,7 +1113,7 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
           </div>
           <div className="flex flex-col gap-space-xs rounded-lg bg-surface-container-low p-space-sm font-mono text-[11px] text-on-surface-variant">
             {[
-              ["Ledger Version:", "2.4-POSTGRES-ACCLOG"],
+              ["Ledger Version:", "2.4-SUPABASE-ACCLOG"],
               ["Root Tree Hash:", "0x78ab19c009fe22a"],
               ["Verified By:", "Nabila F. (Head of Finance)"],
               ["Status Audit:", "LOCKED & VERIFIED"],

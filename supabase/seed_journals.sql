@@ -33,4 +33,9 @@ values
   ((select id from public.journals where number = 'JV/2026/09/0136'), 2, '1103', 'Bank BSI', 'Net-off settlement BSI', 0, 2150000),
   ((select id from public.journals where number = 'JV/2026/09/0135'), 1, '6003', 'Biaya Cetak Lab', 'Cetakan aligner 26 unit', 7800000, 0),
   ((select id from public.journals where number = 'JV/2026/09/0135'), 2, '2101', 'Utang Usaha', 'Invoice lab termin 14 hari', 0, 7800000)
-on conflict do nothing;
+on conflict (journal_id, line_no) do update set
+  account_code = excluded.account_code,
+  account_name = excluded.account_name,
+  memo         = excluded.memo,
+  debit        = excluded.debit,
+  credit       = excluded.credit;

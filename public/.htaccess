@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════
+# Dentico Finance — Apache / LiteSpeed config for cPanel shared hosting
+#
+# This file is copied verbatim from `public/` into the build output
+# (`dist/`). Upload the *contents* of `dist/` into `public_html/`.
+#
+# The build is a single self-contained index.html (JS + CSS inlined),
+# so nothing here is strictly required to make the app run. These rules
+# only add HTTPS enforcement, correct SPA fallback, and sane caching.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Default document ───────────────────────────────────────────────
+DirectoryIndex index.html index.htm
+
+# ── Force HTTPS (leave the first host line commented if you still
+#    need plain HTTP to work, e.g. during setup) ─────────────────────
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Uncomment to force every request to HTTPS:
+  # RewriteCond %{HTTPS} !=on
+  # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # Serve index.html for any path that is not a real file/directory.
+  # Keeps deep links working if client-side routing is added later.
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . index.html [L]
+</IfModule>
+
+# ── Compression ────────────────────────────────────────────────────
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css
+  AddOutputFilterByType DEFLATE application/javascript text/javascript
+  AddOutputFilterByType DEFLATE application/json image/svg+xml
+</IfModule>
+
+# ── Caching ────────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+  # The whole app lives in index.html, so it must never be cached hard
+  # or visitors will keep an old build after you re-upload.
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+
+  <FilesMatch "\.(css|js|json|svg|woff2?|ttf|png|jpg|jpeg|gif|webp|ico)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+
+  # Hardening headers
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ── Block dotfiles (.env, .git, editor leftovers) ──────────────────
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# ── Correct MIME types (some cPanel hosts miss the JSON map) ───────
+<IfModule mod_mime.c>
+  AddType application/javascript .js
+  AddType text/css .css
+  AddType image/svg+xml .svg
+  AddType font/woff2 .woff2
+</IfModule>

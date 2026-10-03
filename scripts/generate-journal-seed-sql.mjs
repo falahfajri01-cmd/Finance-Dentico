@@ -34,7 +34,12 @@ insert into public.journal_lines
   (journal_id, line_no, account_code, account_name, memo, debit, credit)
 values
 ${lineRows.join(",\n")}
-on conflict do nothing;
+on conflict (journal_id, line_no) do update set
+  account_code = excluded.account_code,
+  account_name = excluded.account_name,
+  memo         = excluded.memo,
+  debit        = excluded.debit,
+  credit       = excluded.credit;
 `;
 
 fs.mkdirSync("supabase", { recursive: true });

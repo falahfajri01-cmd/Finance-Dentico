@@ -1,63 +1,154 @@
-# Menghubungkan Dentico Finance ke Supabase
+# Supabase — Dentico Finance
 
-Aplikasi berjalan dalam **mode demo** (dummy data lokal) sampai kredensial
-Supabase diisi. Semua operasi CRUD (baca, tambah, edit, nonaktifkan) memakai
-API yang sama — tinggal ganti sumber datanya.
+Supabase (managed PostgreSQL) adalah **satu-satunya** backend aplikasi.
+Layer PostgreSQL self-hosted + ORM Drizzle yang sebelumnya ada sudah dihapus:
+tidak ada lagi `drizzle.config.ts`, `DATABASE_URL`, atau driver `pg`/`postgres`.
+Browser BERKORELASI langsung ke API Supabase (PostgREST) memakai **anon public
+key**, dan **Row Level Security** pada setiap tabel yang melindungi data.
+
+Aplikasi ini **tidak butuh Node.js di server**. Yang dikirim ke cPanel hanya
+file statis hasil build.
+
+---
 
 ## 1. Buat project
 
-Buat project gratis di [supabase.com](https://supabase.com) → catat
-**Project URL** dan **anon public key** (Project Settings → API).
+Buat project gratis di [supabase.com](https://supabase.com), lalu catat
+**Project URL** dan **anon public key**
+(*Project Settings → API → Project API keys*).
 
-## 2. Buat tabel & seed data
+---
 
-Buka **SQL Editor**, lalu jalankan berurutan:
+## 2. Jalankan schema
 
-1. `supabase/schema.sql` — tabel `public.coa_accounts` (index, trigger
-   `updated_at`, policy RLS) **plus** tabel `public.finance_monthly` &
-   `public.finance_overview_meta` untuk modul Executive Financial Overview.
-2. `supabase/seed.sql` — 71 akun dummy Dentico (10 header + 61 akun posting).
-   File ini digenerate dari `src/data/coa.seed.json` via
-   `node scripts/generate-seed-sql.mjs`, jadi selalu sinkron dengan data demo.
-3. `supabase/seed_finance.sql` — 9 bulan snapshot keuangan (Jan–Sep 2026) +
-   meta JSON (brand split, top branch, top expenses, pipeline status).
-   Digenerate dari `src/data/finance.seed.json` via
-   `node scripts/generate-finance-seed-sql.mjs`.
-4. `supabase/seed_journals.sql` — 8 jurnal dummy (POSTED/REVIEW/APPROVED/DRAFT)
-   beserta baris debit/kredit. Digenerate dari `src/data/journal.seed.json` via
-   `node scripts/generate-journal-seed-sql.mjs`.
-5. `supabase/seed_ledger.sql` — 24 supplement GL terverifikasi (batch POS,
-   payroll JM, clearing QRIS). Digenerate dari `src/data/ledger.seed.json` via
-   `node scripts/generate-ledger-seed-sql.mjs`. Mutasi Buku Besar live
-   tersedia lewat view `public.gl_account_movements` (join jurnal POSTED).
+Buka **SQL Editor → New query**, salin **seluruh isi** file berikut, lalu **Run**:
+
+```
+supabase/install.sql
+```
+
+`install.sql` adalah satu-satunya file yang perlu dijalankan. Isinya sudah
+dirangkai dari `schema.sql` + kelima file seed. Aman dijalankan berulang kali
+(semua statement memakai `create … if not exists`, `drop … if exists`, atau
+`on conflict`).
+
+Kalau kamu ingin menjalankan bagiannya satu per satu, urutannya:
+
+| # | File | Isi |
+| - | ---- | --- |
+| 1 | `schema.sql` | Tabel, index, trigger `updated_at`, policy RLS, view `gl_account_movements` |
+| 2 | `seed.sql` | 115 akun COA (6 header + 109 akun posting) |
+| 3 | `seed_finance.sql` | 9 snapshot bulanan + 1 baris meta overview |
+| 4 | `seed_journals.sql` | 8 jurnal (DRAFT/REVIEW/APPROVED/POSTED) + 16 baris debit/kredit |
+| 5 | `seed_ledger.sql` | 23 supplement GL (batch POS, payroll JM, clearing QRIS) |
+| 6 | `seed_pnl.sql` | 174 posting P&L (58 akun × 3 periode) |
+
+Seed bisa dibuat ulang dari data demo:
+
+```bash
+npm run db:seed      # menulis ulang 5 file seed_*.sql
+npm run db:install   # seed + regenerate supabase/install.sql
+```
+
+### Verifikasi
+
+Blok terakhir `install.sql` menjalankan query penghitung baris. Semua angka
+harus **lebih dari nol**:
+
+```
+coa_accounts | 115
+finance_monthly | 9
+finance_overview_meta | 1
+journals | 8
+journal_lines | 16
+gl_supplements | 23
+pnl_account_postings | 174
+gl_account_movements | <jumlah baris jurnal POSTED>
+```
+
+Kalau ada yang `0`, berarti ada file seed yang belum dijalankan.
+
+---
 
 ## 3. Isi environment
 
 ```bash
 cp .env.example .env
-# lalu isi:
-VITE_SUPABASE_URL=https://<project-ref>.supabase.co
-VITE_SUPABASE_ANON_KEY=<anon-public-key>
 ```
 
-Restart `npm run dev`. Footer sidebar akan berubah dari
-"Demo lokal" menjadi "Supabase Sinkron".
+Isi dengan nilai punyamu:
 
-## Struktur tabel
+```dotenv
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon public key>
+VITE_BASE_PATH=/
+```
 
-| Kolom          | Tipe        | Keterangan                                   |
-| -------------- | ----------- | -------------------------------------------- |
-| `id`           | uuid (PK)   | default `gen_random_uuid()`                  |
-| `code`         | text unique | kode akun 4 digit, cth `1103`                |
-| `name`         | text        | nama resmi akun                              |
-| `type_label`   | text        | sub-tipe, cth `Aset Lancar (Bank)`           |
-| `group_code`   | text        | kelompok header: `1000`–`6600`               |
-| `parent_code`  | text null   | kode parent (untuk hierarki)                 |
-| `parent_label` | text null   | label parent ter-denormalisasi               |
-| `normal`       | text        | `Debit` / `Kredit`                           |
-| `is_header`    | bool        | akun induk — tidak bisa diposting            |
-| `can_post`     | bool        | akun posting level 2                         |
-| `is_active`    | bool        | gunakan ini, bukan DELETE (integritas GL)    |
-| `is_locked`    | bool        | punya histori jurnal → proteksi penghapusan  |
-| `tx_count`     | int         | jumlah transaksi ledger terhubung            |
-| `updated_at`   | timestamptz | diperbarui otomatis oleh trigger             |
+> **Penting:** prefixnya `VITE_`, bukan `NEXT_PUBLIC_`. Variabel `NEXT_PUBLIC_*`
+> juga tetap dibaca sebagai fallback, jadi `.env` lama tidak langsung rusak —
+> tapi tetap disarankan menamai ulang.
+>
+> `VITE_BASE_PATH` menentukan posisi site: `/` untuk root domain
+> (`public_html`), `/finance/` bila diunggah ke subdirektori.
+
+---
+
+## 4. Jalankan
+
+```bash
+npm run dev
+```
+
+Footer sidebar berubah dari **"Demo lokal"** menjadi **"Supabase Sinkron"**
+(lengkap dengan project ref). Kalau masih "Demo lokal", buka console browser —
+repo akan mencatat `[coa] Supabase read failed…` beserta pesan errornya.
+
+---
+
+## Objek database
+
+| Objek | Jenis | RLS | Dipakai oleh |
+| ----- | ----- | --- | ------------ |
+| `coa_accounts` | tabel | RLS | Halaman COA (baca + tulis) |
+| `finance_monthly` | tabel | RLS | Overview Keuangan — seri bulanan |
+| `finance_overview_meta` | tabel | RLS | Overview Keuangan — brand/cabang/expense/pipeline |
+| `journals` | tabel | RLS | Jurnal Umum — header |
+| `journal_lines` | tabel | RLS | Jurnal Umum — baris debit/kredit |
+| `gl_account_movements` | **view** | RLS | Buku Besar — mutasi dari jurnal POSTED |
+| `gl_supplements` | tabel | RLS | Buku Besar — posting upstream (POS/payroll/QRIS) |
+| `pnl_account_postings` | tabel | RLS | Laba Rugi — posting per akun per periode |
+
+### Struktur `coa_accounts`
+
+| Kolom | Tipe | Keterangan |
+| ----- | ---- | ---------- |
+| `id` | uuid (PK) | default `gen_random_uuid()` |
+| `code` | text unique | kode akun 4 digit, cth `1103` |
+| `name` | text | nama resmi akun |
+| `type_label` | text | sub-tipe, cth `Aset Lancar (Bank)` |
+| `group_code` | text | kelompok header: `1000`–`6600` |
+| `parent_code` | text null | kode parent (hierarki) |
+| `parent_label` | text null | label parent ter-denormalisasi |
+| `normal` | text | `Debit` / `Kredit` |
+| `is_header` | bool | akun induk — tidak bisa diposting |
+| `can_post` | bool | akun posting level 2 |
+| `is_active` | bool | nonaktifkan lewat ini, bukan `DELETE` (integritas GL) |
+| `is_locked` | bool | punya histori jurnal → proteksi hapus |
+| `tx_count` | int | jumlah transaksi ledger terhubung |
+| `updated_at` | timestamptz | diperbarui otomatis oleh trigger |
+
+---
+
+## Catatan keamanan
+
+- **Anon key itu publik.** Nilainya ikut ter-*inline* ke dalam `index.html` yang
+  diunggah ke `public_html` — itu memang desain Supabase, bukan kebocoran.
+  Yang melindungi data adalah **RLS**, dan anon key tidak bisa melewati policy.
+- **Jangan pernah** menaruh `service_role` key di `.env` — key itu melewati RLS
+  dan akan memberi akses admin ke siapa pun yang membuka DevTools.
+- Policy di `schema.sql` saat ini `using (true) with check (true)`, artinya
+  anon bisa menulis. Untuk produksi, ubah policy `coa write` agar butuh JWT
+  login (`auth.uid() is not null`) dan aktifkan **Email/Password auth** di
+  *Supabase → Authentication → Providers*.
+- Karena RLS aktif, tabel **tidak terlihat** dari anon sebelum policy dibuat —
+  jalankan `schema.sql` sampai habis, jangan dilewati.

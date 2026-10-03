@@ -42,13 +42,6 @@ function matchesBranchFilter(filter: string, j: Journal): boolean {
   return tokens.every((t) => scope.includes(t));
 }
 
-function periodOf(date: string): "2026-09" | "2026-08" | "2026-07" | null {
-  if (date.startsWith("2026-09")) return "2026-09";
-  if (date.startsWith("2026-08")) return "2026-08";
-  if (date.startsWith("2026-07")) return "2026-07";
-  return null;
-}
-
 /* ═══════════════════════ Drill panel (right) ══════════════════════ */
 function DrillPanel({ account, amount, periodLabel, journals, onOpenLedger }: {
   account: CoaAccount | null; amount: number; periodLabel: string; journals: Journal[]; onOpenLedger: (code: string) => void;

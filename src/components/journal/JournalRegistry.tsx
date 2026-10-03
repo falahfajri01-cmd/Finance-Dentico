@@ -219,7 +219,7 @@ export default function JournalRegistry({
                             <Eye size={13} /> Detail
                           </button>
                           <button
-                            onClick={() => pushToast("info", `Audit Trail · ${shortNumber(j.number)}`, "Riwayat immutable log tersimpan di PostgreSQL (audit_log).")}
+                            onClick={() => pushToast("info", `Audit Trail · ${shortNumber(j.number)}`, "Riwayat immutable log tersimpan di Supabase (audit_log).")}
                             className="rounded-lg bg-surface-container-low p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary"
                             title="Audit Trail"
                           >

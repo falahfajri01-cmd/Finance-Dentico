@@ -143,6 +143,16 @@ export function labelRange(r: DateRange): string {
   return `${fmtDateShort(r.from)} – ${fmtDateShort(r.to)}`;
 }
 
+/** Rentang satu bulan penuh dari month key "2026-10" → 01–31 Okt 2026. */
+export function monthRange(monthKey: string): DateRange {
+  const [y, m] = monthKey.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return {
+    from: `${monthKey}-01`,
+    to: `${monthKey}-${String(last).padStart(2, "0")}`,
+  };
+}
+
 /** Label periode ringkas untuk chip ringkasan: "Okt 2026" atau "Sep – Okt 2026". */
 export function labelPeriod(r: DateRange): string {
   const f = fromISODate(r.from);

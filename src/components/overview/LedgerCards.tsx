@@ -12,6 +12,8 @@ import type { TopExpense } from "../../data/finance";
 interface LedgerCardsProps {
   meta: FinanceMeta;
   topExpenses: TopExpense[];
+  /** Label periode aktif, mis. "Oktober 2026" — mengikuti filter utama. */
+  periodLabel?: string;
   pushToast: PushToast;
   onDrillCoa: (code: string) => void;
   onOpenJournal: (status?: "ALL" | "DRAFT" | "REVIEW" | "APPROVED" | "POSTED" | "LOCKED") => void;
@@ -21,7 +23,7 @@ interface LedgerCardsProps {
 const cardCls = "flex flex-col justify-between rounded-2xl bg-surface-container-lowest p-space-lg shadow-soft";
 const rise = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 
-export default function LedgerCards({ meta, topExpenses, pushToast, onDrillCoa, onOpenJournal, onOpenLedger }: LedgerCardsProps) {
+export default function LedgerCards({ meta, topExpenses, pushToast, onDrillCoa, onOpenJournal, onOpenLedger, periodLabel }: LedgerCardsProps) {
   const p = meta.pipeline;
 
   const shortcuts: { label: string; desc: string; Icon: typeof SquarePen; fg: string; onClick: () => void }[] = [
@@ -38,7 +40,7 @@ export default function LedgerCards({ meta, topExpenses, pushToast, onDrillCoa, 
         <div className="flex flex-col gap-space-xs">
           <div className="flex items-center justify-between">
             <h3 className="text-headline-md text-on-surface">Top 5 Beban Operasional</h3>
-            <span className="rounded bg-surface-container-low px-space-xs py-0.5 text-label-sm text-on-surface-variant">Sep 2026</span>
+            <span className="rounded bg-surface-container-low px-space-xs py-0.5 text-label-sm text-on-surface-variant">{periodLabel ?? "—"}</span>
           </div>
           <p className="text-body-sm text-on-surface-variant">
             Postingan COA biaya terbesar bulan berjalan — klik baris untuk drill-down ke COA

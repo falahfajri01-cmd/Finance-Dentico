@@ -9,7 +9,7 @@ import DistributionCard from "./DistributionCard";
 import LedgerCards from "./LedgerCards";
 import { fetchFinanceBundle } from "../../data/financeRepository";
 import {
-  aggregatePeriod, previousPeriod, PERIOD_OPTIONS,
+  aggregatePeriod, periodOptions,
   type FinanceBundle, type FinanceMonth, type PeriodKey,
 } from "../../data/finance";
 import { fetchAccounts } from "../../data/coaRepository";
@@ -17,9 +17,12 @@ import { fetchPnlLines } from "../../data/pnlRepository";
 import {
   getJournals, initJournalStore, subscribeJournals,
 } from "../../data/journalStore";
-import { computeStatement, getScopedPnlLines, type PnlLine } from "../../data/pnl";
+import { computeStatement, getScopedPnlLines, pnlPeriodMonths, type PnlLine } from "../../data/pnl";
 import type { CoaAccount } from "../../data/coa";
 import type { Journal } from "../../data/journal";
+import {
+  defaultPeriodKey, labelOfPeriod, monthLabelShort, monthsInPeriod, type MonthKey,
+} from "../../utils/periods";
 import { cn } from "../../utils/cn";
 import type { PushToast } from "../Toasts";
 import useScopeStore from "../../hooks/useScopeStore";
@@ -40,13 +43,10 @@ function matchesBranch(filter: string, j: Journal): boolean {
   return tokens.every((t) => scope.includes(t));
 }
 
-type PnlMonthId = "2026-09" | "2026-08" | "2026-07";
+type PnlMonthId = MonthKey;
 
 function periodOf(date: string): PnlMonthId | null {
-  if (date.startsWith("2026-09")) return "2026-09";
-  if (date.startsWith("2026-08")) return "2026-08";
-  if (date.startsWith("2026-07")) return "2026-07";
-  return null;
+  return /^\d{4}-\d{2}$/.test(date.slice(0, 7)) ? date.slice(0, 7) : null;
 }
 
 
@@ -81,7 +81,7 @@ function Skeleton() {
 export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onOpenLedger }: OverviewPageProps) {
   const [bundle, setBundle] = useState<FinanceBundle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<PeriodKey>("2026-09");
+  const [period, setPeriod] = useState<PeriodKey>("");
   const [entity, setEntity] = useState("Dentico Group (Consolidated)");
   const [branch, setBranch] = useState("Semua Cabang (Grup)");
   const [journalFilter, setJournalFilter] = useState("Semua Jurnal Posted");
@@ -123,14 +123,35 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
     return journals.filter((j) => matchesEntity(entity, j) && matchesBranch(branch, j));
   }, [journals, entity, branch, scopedMode]);
 
+  /**
+   * Periode & bulan yang tersedia — diturunkan dari jurnal + tabel bulanan
+   * + bulan berjalan, jadi jurnal baru langsung membuka opsi periodenya.
+   */
+  const availableMonths = useMemo(
+    () => pnlPeriodMonths(journals, pnlLines),
+    [journals, pnlLines]
+  );
+
+  const periodOpts = useMemo(
+    () => (bundle ? periodOptions(journals, bundle.monthly) : []),
+    [journals, bundle]
+  );
+
+  /** Jaga agar periode terpilih selalu ada di daftar (mis. setelah data berubah). */
+  useEffect(() => {
+    if (periodOpts.length === 0) return;
+    if (!period || !periodOpts.some((o) => o.key === period)) setPeriod(defaultPeriodKey(availableMonths));
+  }, [periodOpts, period, availableMonths]);
+
   /** Build a FinanceMonth from the P&L compute engine for EXACT consistency */
-  const buildPnlMonth = (periodId: "2026-09" | "2026-08" | "2026-07" | "Q3"): FinanceMonth => {
-    const eff = getScopedPnlLines(pnlLines, journals, entity, branch);
-    const st = computeStatement(eff, accounts, periodId);
+  const buildPnlMonth = (periodId: PeriodKey): FinanceMonth => {
+    const eff = getScopedPnlLines(pnlLines, journals, entity, branch, availableMonths);
+    const st = computeStatement(eff, accounts, periodId, availableMonths);
+    const label = /^\d{4}-\d{2}$/.test(periodId) ? monthLabelShort(periodId) : periodId;
     return {
       id: periodId,
-      label: periodId.split("-")[1] === "09" ? "Sep" : periodId.split("-")[1] === "08" ? "Ags" : "Jul",
-      labelLong: periodId,
+      label,
+      labelLong: labelOfPeriod(periodId, availableMonths),
       revenue: st.pendapatan,
       hpp: st.biayaLangsung,      // mapped to card 2 "Biaya Langsung"
       opex: st.bebanOps,
@@ -139,38 +160,47 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
   };
 
   const derived = useMemo(() => {
-    if (!bundle) return null;
-    if (!scopedMode) {
-      return {
-        current: aggregatePeriod(bundle.monthly, period),
-        prev: previousPeriod(bundle.monthly, period),
-      };
-    }
-    // Scoped: compute perfectly identical to P&L
-    const current = buildPnlMonth(period);
-    const mIds: PnlMonthId[] = ["2026-07", "2026-08", "2026-09"];
-    const monthly = mIds.map((id) => buildPnlMonth(id as any));
+    if (!bundle || !period) return null;
 
-    let prev: { data: FinanceMonth; label: string } | null = null;
-    if (period !== "Q3") {
-      const prevId = period === "2026-09" ? "2026-08" : period === "2026-08" ? "2026-07" : null;
-      if (prevId) {
-        prev = {
-          data: buildPnlMonth(prevId as any),
-          label: `vs ${prevId.split("-")[1] === "08" ? "Ags" : "Jul"}`,
-        };
-      }
-    }
+    /**
+     * Angka satu periode: pakai snapshot `finance_monthly` bila ada,
+     * kalau belum (mis. Oktober yang baru diinput) hitung dari jurnal lewat
+     * mesin P&L — angka Overview dan Laba Rugi tetap identik.
+     */
+    const valueFor = (pid: PeriodKey): FinanceMonth => {
+      const hasSnapshot = monthsInPeriod(pid, bundle.monthly.map((m) => m.id)).length > 0;
+      if (!scopedMode && hasSnapshot) return aggregatePeriod(bundle.monthly, pid);
+      return buildPnlMonth(pid);
+    };
+
+    /** Pembanding delta: periode tepat sebelum rentang terpilih. */
+    const prevOf = (pid: PeriodKey): { data: FinanceMonth; label: string } | null => {
+      const span = monthsInPeriod(pid, availableMonths);
+      const oldest = span.length ? span[span.length - 1] : null;
+      const older = oldest
+        ? [...availableMonths].reverse().find((m) => m < oldest)
+        : undefined;
+      if (!older) return null;
+      return { data: valueFor(older), label: `vs ${monthLabelShort(older)}` };
+    };
+
+    const current = valueFor(period);
+    const prev = prevOf(period);
+
+    if (!scopedMode) return { current, prev };
+
+    // Chart selalu kronologis naik, sama seperti `bundle.monthly`.
+    const monthly = [...availableMonths].sort().map((id) => buildPnlMonth(id));
 
     // Top 5 Expenses dynamic calculation for scoped mode
     const expenseMap = new Map<string, { code: string; name: string; amount: number }>();
+    const span = monthsInPeriod(period, availableMonths);
     for (const j of scopedJournals) {
       if (j.status !== "POSTED") continue; // FIX: Hanya hitung jurnal yang sudah POSTED
-      
+
       const p = periodOf(j.date);
-      if (period !== "Q3" && p !== period) continue;
-      if (period === "Q3" && (!p || !mIds.includes(p))) continue;
-      
+      if (!p || !span.includes(p)) continue;
+
       for (const l of j.lines) {
         if (!l.accountCode.startsWith("5") && !l.accountCode.startsWith("6")) continue;
         const delta = l.debit - l.credit;
@@ -185,7 +215,7 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
       .slice(0, 5);
 
     return { current, prev, monthly, topExpenses };
-  }, [bundle, period, scopedMode, scopedJournals, pnlLines, accounts]);
+  }, [bundle, period, scopedMode, scopedJournals, pnlLines, accounts, availableMonths]);
 
   const handleExport = () => {
     if (!bundle) return;
@@ -201,7 +231,7 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
     pushToast("success", "Laporan diekspor", "Snapshot bulanan Pendapatan/HPP/OPEX/Laba (CSV).");
   };
 
-  const periodLabel = PERIOD_OPTIONS.find((o) => o.key === period)?.label ?? "September 2026";
+  const periodLabel = period ? labelOfPeriod(period, availableMonths) : "—";
 
   return (
     <div className="relative flex w-full flex-col gap-space-lg">
@@ -284,10 +314,10 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
             <div className="relative">
               <select
                 value={period}
-                onChange={(e) => setPeriod(e.target.value as PeriodKey)}
+                onChange={(e) => setPeriod(e.target.value)}
                 className={cn(selectCls, "bg-surface-container-low font-bold text-primary hover:bg-surface-container")}
               >
-                {PERIOD_OPTIONS.map((o) => (
+                {periodOpts.map((o) => (
                   <option key={o.key} value={o.key}>{o.label}</option>
                 ))}
               </select>
@@ -331,7 +361,7 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
               </div>
               <div className="flex flex-col">
                 <span className="flex flex-wrap items-center gap-2 text-headline-sm text-on-surface">
-                  Periode {bundle.meta.periodLabel} berstatus
+                  Periode {periodLabel} berstatus
                   <span className="rounded-full bg-primary-container px-space-xs py-0.5 text-[11px] uppercase tracking-wider text-label-sm text-on-primary-container">
                     {bundle.meta.periodStatus}
                   </span>
@@ -358,7 +388,7 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
           {/* Charts */}
           <section className="grid grid-cols-1 gap-space-md lg:grid-cols-12">
             <div className="lg:col-span-8">
-              <TrendChart monthly={derived.monthly || bundle.monthly} currentId={period === "Q3" ? "2026-09" : period} />
+              <TrendChart monthly={derived.monthly || bundle.monthly} currentId={monthsInPeriod(period, availableMonths)[0] ?? period} />
             </div>
             <div className="lg:col-span-4">
               <DistributionCard meta={bundle.meta} pushToast={pushToast} />
@@ -366,7 +396,7 @@ export default function OverviewPage({ pushToast, onDrillCoa, onOpenJournal, onO
           </section>
 
           {/* Bottom ledger cards */}
-          <LedgerCards meta={bundle.meta} topExpenses={derived.topExpenses || bundle.meta.topExpenses} pushToast={pushToast} onDrillCoa={onDrillCoa} onOpenJournal={onOpenJournal} onOpenLedger={onOpenLedger} />
+          <LedgerCards meta={bundle.meta} topExpenses={derived.topExpenses || bundle.meta.topExpenses} periodLabel={periodLabel} pushToast={pushToast} onDrillCoa={onDrillCoa} onOpenJournal={onOpenJournal} onOpenLedger={onOpenLedger} />
         </>
       )}
 

@@ -1,4 +1,6 @@
 import seedData from "./finance.seed.json";
+import type { Journal } from "./journal";
+import { buildPeriodOptions, deriveMonths, monthLabelShort, monthsInPeriod, type MonthKey, type PeriodKey } from "../utils/periods";
 
 /* ────────────────────────────────────────────────────────────────────
  * Finance Overview domain types — mirrors `finance_monthly` and
@@ -65,50 +67,66 @@ export interface FinanceBundle {
 
 export const SEED_FINANCE: FinanceBundle = seedData as FinanceBundle;
 
-/* ── Period selection ──────────────────────────────────────────────── */
-export type PeriodKey = "2026-09" | "2026-08" | "2026-07" | "Q3";
+/* ── Period selection ──────────────────────────────────────────────────
+ * Opsi periode dibangun dari data (jurnal + tabel bulanan + bulan
+ * berjalan), bukan daftar hardcode, sehingga bulan baru langsung muncul.
+ * ──────────────────────────────────────────────────────────────────── */
 
-export const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
-  { key: "2026-09", label: "September 2026" },
-  { key: "2026-08", label: "Agustus 2026" },
-  { key: "2026-07", label: "Juli 2026" },
-  { key: "Q3", label: "Q3 2026 (YTD)" },
-];
+export type { PeriodKey };
+export { monthsInPeriod };
+
+/** Opsi periode Overview Keuangan, terbaru lebih dulu. */
+export function periodOptions(journals: Journal[], monthly: FinanceMonth[]): ReturnType<typeof buildPeriodOptions> {
+  return buildPeriodOptions(
+    deriveMonths({
+      dates: journals.map((j) => j.date),
+      keys: monthly.map((m) => m.id),
+    })
+  );
+}
 
 const sum = (months: FinanceMonth[], f: (m: FinanceMonth) => number) =>
   months.reduce((s, m) => s + f(m), 0);
 
-/** Aggregate a period (single month or Q3) into a FinanceMonth-like row */
+/**
+ * Aggregate a period (single month, quarter, or YTD) into a FinanceMonth-like row.
+ * Periode tanpa baris di `finance_monthly` menghasilkan angka nol — bukan
+ * diam-diam memakai bulan lain, supaya label periode tidak pernah berbohong.
+ */
 export function aggregatePeriod(monthly: FinanceMonth[], period: PeriodKey): FinanceMonth {
-  if (period === "Q3") {
-    const q3 = monthly.filter((m) => ["2026-07", "2026-08", "2026-09"].includes(m.id));
-    return {
-      id: "Q3", label: "Q3", labelLong: "Q3 2026 (Jul–Sep)",
-      revenue: sum(q3, (m) => m.revenue),
-      hpp: sum(q3, (m) => m.hpp),
-      opex: sum(q3, (m) => m.opex),
-      netProfit: sum(q3, (m) => m.netProfit),
-    };
-  }
-  return monthly.find((m) => m.id === period) ?? monthly[monthly.length - 1];
+  const ids = monthsInPeriod(period, monthly.map((m) => m.id));
+  const picked = monthly.filter((m) => ids.includes(m.id));
+  const empty = {
+    id: period, label: period, labelLong: period,
+    revenue: 0, hpp: 0, opex: 0, netProfit: 0,
+  };
+  if (picked.length === 0) return empty;
+  return {
+    ...empty,
+    revenue: sum(picked, (m) => m.revenue),
+    hpp: sum(picked, (m) => m.hpp),
+    opex: sum(picked, (m) => m.opex),
+    netProfit: sum(picked, (m) => m.netProfit),
+  };
 }
 
-/** The period to compare against (previous month / Q2), for delta chips */
-export function previousPeriod(monthly: FinanceMonth[], period: PeriodKey): { data: FinanceMonth; label: string } | null {
-  if (period === "Q3") {
-    const q2 = monthly.filter((m) => ["2026-04", "2026-05", "2026-06"].includes(m.id));
-    return {
-      data: {
-        id: "Q2", label: "Q2", labelLong: "Q2 2026",
-        revenue: sum(q2, (m) => m.revenue), hpp: sum(q2, (m) => m.hpp),
-        opex: sum(q2, (m) => m.opex), netProfit: sum(q2, (m) => m.netProfit),
-      },
-      label: "vs Q2",
-    };
-  }
-  const idx = monthly.findIndex((m) => m.id === period);
-  if (idx <= 0) return null;
-  return { data: monthly[idx - 1], label: `vs ${monthly[idx - 1].label}` };
+/**
+ * The period to compare against, for delta chips.
+ * `availableMonths` adalah daftar periode yang bisa dipilih (dari jurnal +
+ * tabel), jadi pembanding tetap ada meski `finance_monthly` belum punya baris.
+ */
+export function previousPeriod(
+  monthly: FinanceMonth[],
+  period: PeriodKey,
+  availableMonths: MonthKey[] = monthly.map((m) => m.id),
+): { data: FinanceMonth; label: string } | null {
+  const span = monthsInPeriod(period, availableMonths);
+  if (span.length === 0) return null;
+  // Dibanding dengan bulan tepat sebelum periode terpilih (di luar cakupannya).
+  const oldest = span[span.length - 1];
+  const older = [...availableMonths].sort().reverse().find((m) => m < oldest);
+  if (!older) return null;
+  return { data: aggregatePeriod(monthly, older), label: `vs ${monthLabelShort(older)}` };
 }
 
 /* ── Formatting helpers (Indonesian locale) ────────────────────────── */

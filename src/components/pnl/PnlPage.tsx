@@ -10,7 +10,8 @@ import { subscribeJournals, getJournals, initJournalStore } from "../../data/jou
 import { fetchPnlLines } from "../../data/pnlRepository";
 import { buildLedger, GL_SUPPLEMENTS } from "../../data/ledger";
 import {
-  computeStatement, getScopedPnlLines, BEBAN_CHILDREN, PNL_PERIODS,
+  amountOf, computeStatement, getScopedPnlLines, BEBAN_CHILDREN,
+  pnlPeriodMonths, pnlPeriodOptions,
   type PnlLine, type PnlPeriod, type PnlSection, type SectionKey,
 } from "../../data/pnl";
 import type { CoaAccount } from "../../data/coa";
@@ -19,6 +20,7 @@ import { fmtRpFull } from "../../data/finance";
 import { fmtDateId, shortNumber } from "../../data/journal";
 import type { PushToast } from "../Toasts";
 import { cn } from "../../utils/cn";
+import { defaultPeriodKey, labelOfPeriod } from "../../utils/periods";
 import useScopeStore from "../../hooks/useScopeStore";
 
 /* ── Format helper ─────────────────────────────────────────────────── */
@@ -215,7 +217,7 @@ export default function PnlPage({ pushToast, onOpenLedger }: PnlPageProps) {
   const [loading, setLoading] = useState(true);
   const [entity, setEntity] = useState("Dentico Group (Consolidated)");
   const [branch, setBranch] = useState("Semua Cabang (Grup)");
-  const [period, setPeriod] = useState<PnlPeriod>("2026-09");
+  const [period, setPeriod] = useState<PnlPeriod>("");
   const scope = useScopeStore();
   const [selectedCode, setSelectedCode] = useState<string>("6201");
   const [openMap, setOpenMap] = useState<Record<SectionKey, boolean>>({
@@ -237,19 +239,34 @@ export default function PnlPage({ pushToast, onOpenLedger }: PnlPageProps) {
     return () => { alive = false; unsub(); };
   }, []);
 
+  /**
+   * Periode & bulan tersedia, diturunkan dari jurnal + tabel postings +
+   * bulan berjalan. Jurnal Oktober langsung memunculkan opsi "Oktober 2026".
+   */
+  const availableMonths = useMemo(() => pnlPeriodMonths(journals, lines), [journals, lines]);
+  const periodOpts = useMemo(() => pnlPeriodOptions(journals, lines), [journals, lines]);
+
+  /** Jaga agar periode terpilih selalu tersedia di daftar opsi. */
+  useEffect(() => {
+    if (periodOpts.length === 0) return;
+    if (!period || !periodOpts.some((o) => o.key === period)) setPeriod(defaultPeriodKey(availableMonths));
+  }, [periodOpts, period, availableMonths]);
+
   const effectiveLines = useMemo(
-    () => getScopedPnlLines(lines, journals, entity, branch),
-    [lines, journals, entity, branch]
+    () => getScopedPnlLines(lines, journals, entity, branch, availableMonths),
+    [lines, journals, entity, branch, availableMonths]
   );
 
-  const st = useMemo(() => computeStatement(effectiveLines, accounts, period), [effectiveLines, accounts, period]);
+  const st = useMemo(
+    () => computeStatement(effectiveLines, accounts, period, availableMonths),
+    [effectiveLines, accounts, period, availableMonths]
+  );
   const selAccount = useMemo(() => accounts.find((a) => a.code === selectedCode) ?? null, [accounts, selectedCode]);
   const selAmount = useMemo(() => {
     const line = effectiveLines.find((l) => l.code === selectedCode);
     if (!line) return 0;
-    if (period === "Q3") return (line.amounts["2026-07"] ?? 0) + (line.amounts["2026-08"] ?? 0) + (line.amounts["2026-09"] ?? 0);
-    return line.amounts[period] ?? 0;
-  }, [effectiveLines, selectedCode, period]);
+    return amountOf(line, period, availableMonths);
+  }, [effectiveLines, selectedCode, period, availableMonths]);
 
   const scopedMode = entity !== "Dentico Group (Consolidated)" || branch !== "Semua Cabang (Grup)";
   const scopedPostedJournals = useMemo(() => {
@@ -257,7 +274,7 @@ export default function PnlPage({ pushToast, onOpenLedger }: PnlPageProps) {
     return journals.filter((j) => j.status === "POSTED" && matchesEntityFilter(entity, j) && matchesBranchFilter(branch, j));
   }, [journals, scopedMode, entity, branch]);
 
-  const periodLabel = PNL_PERIODS.find((p) => p.key === period)?.label.replace(" (Aktif)", "") ?? "";
+  const periodLabel = period ? labelOfPeriod(period, availableMonths) : "—";
   const sec = (k: SectionKey) => st.sections.find((s) => s.key === k)!;
   const toggleSection = (k: SectionKey) => setOpenMap((m) => ({ ...m, [k]: !m[k] }));
   const setAll = (v: boolean) => setOpenMap((m) => Object.fromEntries(Object.keys(m).map((k) => [k, v])) as Record<SectionKey, boolean>);
@@ -271,7 +288,7 @@ export default function PnlPage({ pushToast, onOpenLedger }: PnlPageProps) {
     rows.push(`,,LABA BERSIH,${st.labaBersih}`);
     const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = `dentico-laba-rugi-${period === "Q3" ? "q3" : period}.csv`; a.click();
+    a.href = url; a.download = `dentico-laba-rugi-${period.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.csv`; a.click();
     URL.revokeObjectURL(url);
     pushToast("success", "Laporan diekspor", `Income statement ${periodLabel} ke CSV.`);
   };
@@ -345,8 +362,8 @@ export default function PnlPage({ pushToast, onOpenLedger }: PnlPageProps) {
           <div className="flex flex-col gap-1">
             <label className="flex items-center gap-1 text-label-sm uppercase tracking-wider text-outline"><CalendarClock size={13} className="text-primary" /> Periode</label>
             <div className="relative">
-              <select value={period} onChange={(e) => setPeriod(e.target.value as PnlPeriod)} className="w-full cursor-pointer appearance-none rounded-lg bg-surface-container-low px-space-sm py-2 text-label-md font-bold text-primary outline-none focus:ring-2 focus:ring-primary/50">
-                {PNL_PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              <select value={period} onChange={(e) => setPeriod(e.target.value)} className="w-full cursor-pointer appearance-none rounded-lg bg-surface-container-low px-space-sm py-2 text-label-md font-bold text-primary outline-none focus:ring-2 focus:ring-primary/50">
+                {periodOpts.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
               <ChevronDown size={16} className="pointer-events-none absolute right-space-sm top-1/2 -translate-y-1/2 text-primary" />
             </div>

@@ -1,6 +1,10 @@
 import seedData from "./pnl.seed.json";
 import type { CoaAccount } from "./coa";
 import type { Journal } from "./journal";
+import {
+  buildPeriodOptions, deriveMonths, labelOfPeriod, monthKeyOf, monthsInPeriod,
+  type MonthKey, type PeriodKey, type PeriodOption,
+} from "../utils/periods";
 
 /* ────────────────────────────────────────────────────────────────────
  * Laporan Laba Rugi (Income Statement) domain
@@ -21,7 +25,7 @@ import type { Journal } from "./journal";
  *   ─── LABA BERSIH ───
  * ──────────────────────────────────────────────────────────────────── */
 
-export type PnlPeriod = "2026-09" | "2026-08" | "2026-07" | "Q3";
+export type PnlPeriod = PeriodKey;
 
 export interface PnlLine {
   code: string;
@@ -35,18 +39,44 @@ interface PnlSeed { periods: string[]; items: PnlLine[] }
 
 export const SEED_PNL: PnlSeed = seedData as unknown as PnlSeed;
 
-export const PNL_PERIODS: { key: PnlPeriod; label: string }[] = [
-  { key: "2026-09", label: "September 2026 (Aktif)" },
-  { key: "2026-08", label: "Agustus 2026" },
-  { key: "2026-07", label: "Juli 2026" },
-  { key: "Q3", label: "Q3 2026 (YTD)" },
-];
+/**
+ * Opsi periode Laba Rugi. Diturunkan dari jurnal yang ada + periode pada
+ * tabel postings + bulan berjalan, jadi jurnal baru langsung membuka
+ * periode barunya (mis. "2026-10" setelah ada jurnal Oktober).
+ */
+export function pnlPeriodOptions(journals: Journal[], baseLines: PnlLine[] = []): PeriodOption[] {
+  const months = deriveMonths({
+    dates: journals.map((j) => j.date),
+    keys: baseLines.flatMap((l) => Object.keys(l.amounts)),
+  });
+  return buildPeriodOptions(months);
+}
 
-export function amountOf(line: PnlLine, period: PnlPeriod): number {
-  if (period === "Q3") {
-    return (line.amounts["2026-07"] ?? 0) + (line.amounts["2026-08"] ?? 0) + (line.amounts["2026-09"] ?? 0);
+export function pnlPeriodMonths(journals: Journal[], baseLines: PnlLine[] = []): MonthKey[] {
+  return deriveMonths({
+    dates: journals.map((j) => j.date),
+    keys: baseLines.flatMap((l) => Object.keys(l.amounts)),
+  });
+}
+
+export { labelOfPeriod };
+
+/** Jumlah satu baris pada periode mana pun (bulan, kuartal, atau YTD). */
+export function amountOf(line: PnlLine, period: PnlPeriod, months: MonthKey[] = []): number {
+  if (months.length > 0) {
+    return monthsInPeriod(period, months).reduce((s, m) => s + (line.amounts[m] ?? 0), 0);
+  }
+  if (isAggregatePeriod(period)) {
+    return Object.entries(line.amounts)
+      .filter(([m]) => monthsInPeriod(period, [m]).length > 0)
+      .reduce((s, [, v]) => s + (v ?? 0), 0);
   }
   return line.amounts[period] ?? 0;
+}
+
+/** true untuk periode agregat (kuartal "2026-Q4" atau YTD "2026-YTD"). */
+export function isAggregatePeriod(period: string): boolean {
+  return !/^\d{4}-(0[1-9]|1[0-2])$/.test(period);
 }
 
 /* ── Section definitions (match screenshot structure exactly) ──────── */
@@ -132,19 +162,21 @@ export interface PnlStatement {
 }
 
 /**
- * Filter journals by entity/branch and rebuild PnlLine items.
- * Used to ensure Overview and P&L pages show identical numbers.
+ * Bangun `amounts` untuk setiap bulan yang tersedia.
+ *
+ * Periode yang sudah punya snapshot resmi di `pnl_account_postings`
+ * (mis. Jul–Sep) memakai nilai tabel itu agar angka tidak berubah; bulan
+ * baru yang belum ada di tabel — misalnya Oktober setelah jurnal diinput —
+ * dihitung langsung dari jurnal POSTED.
  */
-export function getScopedPnlLines(
+function applyJournalMonths(
   baseLines: PnlLine[],
   journals: Journal[],
   entity: string,
   branch: string,
+  months: MonthKey[],
+  replaceAll: boolean,
 ): PnlLine[] {
-  const isConsolidated = entity === "Dentico Group (Consolidated)" && branch === "Semua Cabang (Grup)";
-  if (isConsolidated) return baseLines;
-
-  const byCodePeriod = new Map<string, number>();
   const matchesEntity = (j: Journal) =>
     entity === "Dentico Group (Consolidated)" || j.brand.toLowerCase().includes(entity.toLowerCase().split(" - ")[0].toLowerCase());
 
@@ -157,13 +189,11 @@ export function getScopedPnlLines(
     return tokens.every((t) => scope.includes(t));
   };
 
-  const periodOf = (d: string) => d.startsWith("2026-09") ? "2026-09" : d.startsWith("2026-08") ? "2026-08" : d.startsWith("2026-07") ? "2026-07" : null;
-
+  const byCodePeriod = new Map<string, number>();
   for (const j of journals) {
     if (j.status !== "POSTED") continue;
     if (!matchesEntity(j) || !matchesBranch(j)) continue;
-    const p = periodOf(j.date);
-    if (!p) continue;
+    const p = monthKeyOf(j.date);
     for (const l of j.lines) {
       let delta = 0;
       if (l.accountCode.startsWith("4")) delta = l.credit - l.debit;
@@ -174,27 +204,51 @@ export function getScopedPnlLines(
     }
   }
 
-  return baseLines.map((line) => ({
-    ...line,
-    amounts: {
-      "2026-07": byCodePeriod.get(`${line.code}:2026-07`) ?? 0,
-      "2026-08": byCodePeriod.get(`${line.code}:2026-08`) ?? 0,
-      "2026-09": byCodePeriod.get(`${line.code}:2026-09`) ?? 0,
-    },
-  }));
+  return baseLines.map((line) => {
+    const amounts: Record<string, number> = {};
+    for (const m of months) {
+      const derived = byCodePeriod.get(`${line.code}:${m}`) ?? 0;
+      const hasSnapshot = line.amounts[m] !== undefined;
+      amounts[m] = hasSnapshot && !replaceAll ? line.amounts[m] : derived;
+    }
+    return { ...line, amounts };
+  });
+}
+
+/**
+ * Filter journals by entity/branch and rebuild PnlLine items.
+ *
+ * `replaceAll` (mode scoped) mengganti semua angka dengan turunan jurnal.
+ *_mode konsolidasi_ mempertahankan snapshot `pnl_account_postings` untuk
+ * periode yang sudah ada, dan hanya mengisi bulan yang belum punya snapshot.
+ */
+export function getScopedPnlLines(
+  baseLines: PnlLine[],
+  journals: Journal[],
+  entity: string,
+  branch: string,
+  months?: MonthKey[],
+): PnlLine[] {
+  const isConsolidated = entity === "Dentico Group (Consolidated)" && branch === "Semua Cabang (Grup)";
+  return applyJournalMonths(
+    baseLines, journals, entity, branch,
+    months ?? pnlPeriodMonths(journals, baseLines),
+    !isConsolidated,
+  );
 }
 
 export function computeStatement(
   items: PnlLine[],
   accounts: CoaAccount[],
   period: PnlPeriod,
+  months?: MonthKey[],
 ): PnlStatement {
   const nameOf = (code: string) => accounts.find((a) => a.code === code)?.name ?? code;
 
   const sections: PnlSection[] = SECTION_DEFS.map((def) => {
     const rows: PnlRow[] = def.codes.map((code) => {
       const line = items.find((it) => it.code === code);
-      const amount = line ? amountOf(line, period) : 0;
+      const amount = line ? amountOf(line, period, months) : 0;
       const isIncome = code.startsWith("4");
       const existsInCoa = accounts.some((a) => a.code === code);
        return {

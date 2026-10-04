@@ -21,8 +21,9 @@ import type { PushToast } from "../Toasts";
 import { cn } from "../../utils/cn";
 import {
   defaultRange, fmtDateShort, fmtMonthYear, isSameRange, labelPeriod, labelRange,
-  normalizeRange, rangePresets, type DateRange, type RangePresetId,
+  monthRange, normalizeRange, rangePresets, type DateRange, type RangePresetId,
 } from "../../utils/dateRange";
+import { deriveMonths, monthLabelLong } from "../../utils/periods";
 import useScopeStore from "../../hooks/useScopeStore";
 
 /* ══════════════════════════ Helpers ════════════════════════════════ */
@@ -316,7 +317,7 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
   /* Default mengikuti tanggal saat aplikasi dibuka (awal bulan → hari ini),
      bukan periode tetap, dan batasnya bisa digeser kapan saja. */
   const [range, setRange] = useState<DateRange>(defaultRange);
-  const [rangePreset, setRangePreset] = useState<RangePresetId>("month");
+  const [rangePreset, setRangePreset] = useState<string>("month");
   const [branchFilter, setBranchFilter] = useState("Semua Cabang (Grup)");
   const [statusFilter, setStatusFilter] = useState("Hanya Posted (Valid)");
   const scope = useScopeStore();
@@ -324,20 +325,42 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
   const presets = useMemo(() => rangePresets(), []);
 
   /**
-   * Terapkan preset atau rentang bebas. Batas bawah/atas selalu diurutkan,
-   * dan preset yang kebetulan sama dengan pilihan manual ikut terpilih.
+   * Opsi "Bulan <data>" untuk setiap bulan yang benar-benar ada transaksinya,
+   * plus bulan berjalan. Jurnal baru (mis. Oktober) langsung muncul di sini.
    */
-  const applyRange = useCallback((preset: RangePresetId, next?: DateRange) => {
-    const normalized = normalizeRange(next ?? presets[preset].range);
+  const monthOptions = useMemo(() => {
+    const keys = deriveMonths({ dates: journals.map((j) => j.date) });
+    const relKeys: RangePresetId[] = ["month", "lastMonth"];
+    const relative = new Set(relKeys.map((k) => presets[k].range.from.slice(0, 7)));
+    return keys
+      .filter((k) => !relative.has(k))
+      .map((k) => ({
+        key: `m:${k}`,
+        label: `Bulan ${monthLabelLong(k)}`,
+        range: monthRange(k),
+      }));
+  }, [journals, presets]);
+
+  const allRangeOptions = useMemo(
+    () => [
+      ...(["custom", "today", "week", "month", "lastMonth", "quarter", "ytd", "all"] as RangePresetId[])
+        .map((id) => ({ key: id, label: presets[id].label, range: presets[id].range })),
+      ...monthOptions,
+    ],
+    [presets, monthOptions]
+  );
+
+  /**
+   * Terapkan preset atau rentang bebas. Batas bawah/atas selalu diurutkan,
+   * dan opsi yang kebetulan sama dengan pilihan manual ikut terpilih.
+   */
+  const applyRange = useCallback((key: string, next?: DateRange) => {
+    const fallback = presets.month.range;
+    const normalized = normalizeRange(next ?? allRangeOptions.find((o) => o.key === key)?.range ?? fallback);
     setRange(normalized);
-    if (preset !== "custom") {
-      setRangePreset(preset);
-      return;
-    }
-    const matched = (Object.keys(presets) as RangePresetId[])
-      .find((id) => id !== "custom" && isSameRange(presets[id].range, normalized));
-    setRangePreset(matched ?? "custom");
-  }, [presets]);
+    const matched = allRangeOptions.find((o) => isSameRange(o.range, normalized));
+    setRangePreset(matched?.key ?? "custom");
+  }, [allRangeOptions, presets]);
 
   useEffect(() => {
     initJournalStore();
@@ -566,11 +589,10 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
               <div className="relative">
                 <select
                   value={rangePreset}
-                  onChange={(e) => applyRange(e.target.value as RangePresetId)}
+                  onChange={(e) => applyRange(e.target.value)}
                   className={selCls}
                 >
-                  {(["custom", "today", "week", "month", "lastMonth", "quarter", "ytd", "all"] as RangePresetId[])
-                    .map((id) => <option key={id} value={id}>{presets[id].label}</option>)}
+                  {allRangeOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
                 <ChevronDown size={13} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-outline" />
               </div>

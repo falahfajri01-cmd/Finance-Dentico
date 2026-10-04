@@ -52,7 +52,7 @@ export default function TrendChart({ monthly, currentId }: { monthly: FinanceMon
           <div className="flex flex-wrap items-center gap-space-xs">
             <h2 className="text-headline-md text-on-surface">Tren Pendapatan vs Beban & Laba Bersih</h2>
             <span className="rounded bg-surface-container-low px-space-xs py-0.5 text-label-sm text-primary">
-              {monthly[0]?.label} – {monthly[monthly.length - 1]?.label} 2026
+              {monthly[0]?.labelLong} – {monthly[monthly.length - 1]?.labelLong}
             </span>
           </div>
           <span className="text-body-sm text-on-surface-variant">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronRight, Eye, Printer, Share2, ChevronDown, Landmark, Calendar,
@@ -19,6 +19,10 @@ import { fmtRpFull, fmtRpJt } from "../../data/finance";
 import { fmtDateId, shortNumber, type Journal } from "../../data/journal";
 import type { PushToast } from "../Toasts";
 import { cn } from "../../utils/cn";
+import {
+  defaultRange, fmtDateShort, fmtMonthYear, isSameRange, labelPeriod, labelRange,
+  normalizeRange, rangePresets, type DateRange, type RangePresetId,
+} from "../../utils/dateRange";
 import useScopeStore from "../../hooks/useScopeStore";
 
 /* ══════════════════════════ Helpers ════════════════════════════════ */
@@ -296,6 +300,8 @@ interface GlPageProps {
 
 const selBox = "flex flex-1 min-w-0 flex-col";
 const selCls = "w-full cursor-pointer appearance-none truncate bg-transparent text-label-md text-on-surface outline-none";
+const dateInputCls =
+  "w-full min-w-0 cursor-pointer bg-transparent text-[12px] text-on-surface outline-none";
 
 export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPageProps) {
   const [accounts, setAccounts] = useState<CoaAccount[]>([]);
@@ -307,10 +313,31 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
   const [search, setSearch] = useState("");
   const [mode, setMode] = useState<"running" | "periodik">("running");
   const [drawerEntry, setDrawerEntry] = useState<GlEntry | null>(null);
-  const [dateRange, setDateRange] = useState("01 Sep 2026 - 30 Sep 2026");
+  /* Default mengikuti tanggal saat aplikasi dibuka (awal bulan → hari ini),
+     bukan periode tetap, dan batasnya bisa digeser kapan saja. */
+  const [range, setRange] = useState<DateRange>(defaultRange);
+  const [rangePreset, setRangePreset] = useState<RangePresetId>("month");
   const [branchFilter, setBranchFilter] = useState("Semua Cabang (Grup)");
   const [statusFilter, setStatusFilter] = useState("Hanya Posted (Valid)");
   const scope = useScopeStore();
+
+  const presets = useMemo(() => rangePresets(), []);
+
+  /**
+   * Terapkan preset atau rentang bebas. Batas bawah/atas selalu diurutkan,
+   * dan preset yang kebetulan sama dengan pilihan manual ikut terpilih.
+   */
+  const applyRange = useCallback((preset: RangePresetId, next?: DateRange) => {
+    const normalized = normalizeRange(next ?? presets[preset].range);
+    setRange(normalized);
+    if (preset !== "custom") {
+      setRangePreset(preset);
+      return;
+    }
+    const matched = (Object.keys(presets) as RangePresetId[])
+      .find((id) => id !== "custom" && isSameRange(presets[id].range, normalized));
+    setRangePreset(matched ?? "custom");
+  }, [presets]);
 
   useEffect(() => {
     initJournalStore();
@@ -384,14 +411,16 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
     const q = search.trim().toLowerCase();
     return ledger.entries.filter((e) => {
       if (!matchesBranchFilter(branchFilter, e)) return false;
-      if (dateRange === "Minggu Ini (W36 2026)" && (e.date < "2026-09-08" || e.date > "2026-09-14")) return false;
+      if (e.date < range.from || e.date > range.to) return false;
       if (q && !`${e.voucher} ${e.ref} ${e.description} ${e.offsetLabel} ${e.subDescription ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [ledger.entries, search, branchFilter, dateRange]);
+  }, [ledger.entries, search, branchFilter, range]);
 
   /** true when the account HAS posted activity but viewport filters hide every row */
   const hiddenByFilters = ledger.entries.length > 0 && visible.length === 0;
+
+  const periodLabel = labelPeriod(range);
 
   const hash = account ? auditHash(account.code) : "—";
   const netFlow = ledger.totalDebit - ledger.totalCredit;
@@ -529,20 +558,41 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
             </div>
           </button>
 
-          {/* Date range */}
+          {/* Date range — preset relatif hari ini + rentang bebas tanpa batas tetap */}
           <div className="flex items-center gap-space-sm rounded-lg bg-surface-container-low p-space-sm md:col-span-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-container-highest text-primary"><Calendar size={16} /></div>
             <div className={selBox}>
               <span className="text-label-sm uppercase tracking-wider text-on-surface-variant">Rentang Waktu</span>
               <div className="relative">
-                <select value={dateRange} onChange={(e) => setDateRange(e.target.value)} className={selCls}>
-                  <option>01 Sep 2026 - 30 Sep 2026</option>
-                  <option>Minggu Ini (W36 2026)</option>
-                  <option>Kuartal 3 (Q3 2026)</option>
-                  <option>Tahun Berjalan (YTD 2026)</option>
+                <select
+                  value={rangePreset}
+                  onChange={(e) => applyRange(e.target.value as RangePresetId)}
+                  className={selCls}
+                >
+                  {(["custom", "today", "week", "month", "lastMonth", "quarter", "ytd", "all"] as RangePresetId[])
+                    .map((id) => <option key={id} value={id}>{presets[id].label}</option>)}
                 </select>
                 <ChevronDown size={13} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-outline" />
               </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <input
+                type="date"
+                aria-label="Tanggal mulai"
+                value={range.from}
+                max={range.to}
+                onChange={(e) => applyRange("custom", { ...range, from: e.target.value })}
+                className={dateInputCls}
+              />
+              <span className="text-[11px] text-outline">–</span>
+              <input
+                type="date"
+                aria-label="Tanggal akhir"
+                value={range.to}
+                min={range.from}
+                onChange={(e) => applyRange("custom", { ...range, to: e.target.value })}
+                className={dateInputCls}
+              />
             </div>
           </div>
 
@@ -618,7 +668,7 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
         {/* Opening */}
         <div className="relative flex flex-col justify-between overflow-hidden rounded-xl bg-surface-container-lowest p-space-md shadow-soft">
           <div className="mb-space-sm flex items-center justify-between">
-            <span className="text-label-sm uppercase tracking-wider text-on-surface-variant">Saldo Awal (01 Sep 2026)</span>
+            <span className="text-label-sm uppercase tracking-wider text-on-surface-variant">Saldo Awal ({fmtDateShort(range.from)})</span>
             <span className="rounded bg-surface-container-high px-space-xs py-0.5 text-[10px] text-label-sm text-on-surface">
               {account?.normal.toUpperCase() ?? "DEBIT"}
             </span>
@@ -627,11 +677,11 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
             <div className="text-num-metric-lg tracking-tight text-on-surface">{fmtRpFull(ledger.opening)}</div>
             <div className="mt-1 flex items-center gap-space-xs text-body-sm text-on-surface-variant">
               <Clock size={14} className="text-primary" />
-              <span>{ledger.opening > 0 ? "Bawaan dari Tutup Buku Agustus 2026" : "Akun nominal — akrual periode berjalan"}</span>
+              <span>{ledger.opening > 0 ? `Bawaan dari Tutup Buku ${fmtMonthYear(range.from)}` : "Akun nominal — akrual periode berjalan"}</span>
             </div>
           </div>
           <div className="mt-space-sm flex items-center justify-between pt-space-xs text-[11px] text-label-sm text-on-surface-variant">
-            <span>Jurnal Saldo: GL-OPN-20260901</span>
+            <span>Jurnal Saldo: GL-OPN-{range.from.replace(/-/g, "")}</span>
             <span className="font-semibold text-primary">Tervalidasi</span>
           </div>
         </div>
@@ -764,7 +814,7 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
             </div>
           </div>
           <button
-            onClick={() => { setBranchFilter("Semua Cabang (Grup)"); setDateRange("01 Sep 2026 - 30 Sep 2026"); setSearch(""); }}
+            onClick={() => { setBranchFilter("Semua Cabang (Grup)"); setStatusFilter("Hanya Posted (Valid)"); applyRange("month"); setSearch(""); }}
             className="shrink-0 rounded-lg bg-primary-container px-space-sm py-1.5 text-label-sm font-bold text-on-primary-container transition-colors hover:bg-secondary"
           >
             Reset Filter Tampilan
@@ -902,12 +952,12 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
             <tbody className="divide-y divide-surface-container-low text-body-sm text-on-surface">
               {/* Opening row */}
               <tr className="bg-surface-container-low/40 font-semibold">
-                <td className="px-space-md py-3 text-on-surface tnum">01/09/2026</td>
+                <td className="px-space-md py-3 text-on-surface tnum">{fmtDateId(range.from)}</td>
                 <td className="px-space-md py-3">
-                  <span className="rounded bg-surface-container-highest px-2 py-0.5 font-mono text-[11px] text-primary">GL-OPN-SEP26</span>
+                  <span className="rounded bg-surface-container-highest px-2 py-0.5 font-mono text-[11px] text-primary">GL-OPN-{range.from.replace(/-/g, "")}</span>
                 </td>
                 <td className="px-space-md py-3 text-on-surface-variant">Dentico Group (HO)</td>
-                <td className="px-space-md py-3 text-headline-sm text-primary">Saldo Awal Periode September 2026</td>
+                <td className="px-space-md py-3 text-headline-sm text-primary">Saldo Awal Periode {fmtMonthYear(range.from)}</td>
                 <td className="px-space-md py-3 italic text-on-surface-variant">[3103] Laba Ditahan</td>
                 <td className="px-space-md py-3 text-right text-num-table-md text-on-surface">-</td>
                 <td className="px-space-md py-3 text-right text-num-table-md text-on-surface">-</td>
@@ -996,7 +1046,7 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
             <tfoot>
               <tr className="bg-surface-container text-headline-sm text-on-surface">
                 <td className="px-space-md py-3 text-right text-[12px] font-bold uppercase tracking-wider text-on-surface-variant" colSpan={5}>
-                  Total Mutasi Periode September 2026
+                  Total Mutasi Periode {periodLabel}
                 </td>
                 <td className="px-space-md py-3 text-right text-num-table-md font-bold text-emerald-600">+{fmtRpFull(ledger.totalDebit)}</td>
                 <td className="px-space-md py-3 text-right text-num-table-md font-bold text-error">-{fmtRpFull(ledger.totalCredit)}</td>
@@ -1011,6 +1061,11 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
         <div className="flex flex-col items-center justify-between gap-space-sm bg-surface-container-low px-space-md py-space-sm sm:flex-row">
           <div className="flex flex-wrap items-center gap-space-sm text-label-sm text-on-surface-variant">
             <span>Menampilkan <strong>{visible.length} mutasi</strong> — saldo awal termasuk</span>
+            <span className="text-outline-variant">•</span>
+            <span className="flex items-center gap-1">
+              <Calendar size={12} className="text-primary" />
+              <span>Rentang: <strong>{labelRange(range)}</strong></span>
+            </span>
             <span className="text-outline-variant">•</span>
             <span>Akun: <strong>{account ? `[${account.code}] ${account.name}` : "—"}</strong></span>
             <span className="text-outline-variant">•</span>
@@ -1044,7 +1099,7 @@ export default function GlPage({ pushToast, ledgerDrill, onOpenJournal }: GlPage
               <span className="text-headline-sm text-on-surface">Distribusi Arus Mutasi Akun {account ? `[${account.code}]` : ""}</span>
               <span className="text-body-sm text-on-surface-variant">Proporsi arus masuk vs penyaluran operasional berjalan</span>
             </div>
-            <span className="rounded-full bg-surface-container px-space-sm py-0.5 text-[11px] text-label-sm font-semibold text-primary">September 2026</span>
+            <span className="rounded-full bg-surface-container px-space-sm py-0.5 text-[11px] text-label-sm font-semibold text-primary">{periodLabel}</span>
           </div>
           <div className="my-space-sm space-y-3">
             {(() => {

@@ -12,6 +12,7 @@ import {
 } from "../../data/journal";
 import type { CoaAccount } from "../../data/coa";
 import { cn } from "../../utils/cn";
+import { toISODate, today } from "../../utils/dateRange";
 import type { PushToast } from "../Toasts";
 import useScopeStore from "../../hooks/useScopeStore";
 
@@ -62,7 +63,7 @@ const boxCls =
   "flex items-center gap-space-xs rounded-lg border border-transparent bg-surface-container-low transition-all focus-within:border-primary/30 focus-within:bg-surface-container-lowest focus-within:shadow-card focus-within:ring-2 focus-within:ring-primary/40";
 
 export default function JournalEntryForm({ accounts, editing, number, onSave, onCancelEdit, pushToast }: JournalEntryFormProps) {
-  const [date, setDate] = useState(editing?.date ?? "2026-09-30");
+  const [date, setDate] = useState(editing?.date ?? toISODate(today()));
   const [type, setType] = useState<JournalType>(editing?.type ?? "JP");
   const [brand, setBrand] = useState(editing?.brand ?? "Brand A");
   const [branch, setBranch] = useState(editing?.branch ?? "Yogyakarta - Gejayan");

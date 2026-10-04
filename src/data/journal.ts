@@ -88,8 +88,14 @@ export function totalOf(lines: JournalLine[]): { debit: number; credit: number }
   };
 }
 
-/** Next journal number inside the active period prefix, e.g. JV/2026/09/0143 */
-export function nextNumber(journals: Journal[], periodPrefix = "JV/2026/09/"): string {
+/**
+ * Next journal number inside the period prefix derived from `date`,
+ * e.g. "2026-10-04" → "JV/2026/10/0001". Nomor ikut bulan transaksi,
+ * bukan periode tetap.
+ */
+export function nextNumber(journals: Journal[], date?: string): string {
+  const iso = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
+  const periodPrefix = `JV/${iso.slice(0, 4)}/${iso.slice(5, 7)}/`;
   const max = journals
     .filter((j) => j.number.startsWith(periodPrefix))
     .reduce((m, j) => {

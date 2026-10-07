@@ -21,6 +21,7 @@ import { fmtDateId, shortNumber } from "../../data/journal";
 import type { PushToast } from "../Toasts";
 import { cn } from "../../utils/cn";
 import { defaultPeriodKey, labelOfPeriod } from "../../utils/periods";
+import { downloadPnlPdf } from "../../utils/pnlPdf";
 import useScopeStore from "../../hooks/useScopeStore";
 
 /* ── Format helper ─────────────────────────────────────────────────── */
@@ -328,8 +329,17 @@ export default function PnlPage({ pushToast, onOpenLedger }: PnlPageProps) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-space-xs">
-          <button onClick={() => pushToast("info", "Export PDF", "PDF ber-watermark tersedia pada rilis penuh.")} className="flex items-center gap-space-xs rounded-lg border border-surface-container bg-surface-container-lowest px-space-md py-2 text-label-md shadow-soft hover:bg-surface-container-low active:scale-[0.98]">
-            <FileText size={17} className="text-error" /> Export PDF
+          <button
+            onClick={() => downloadPnlPdf({
+              entity,
+              branch,
+              period,
+              periodLabel,
+              statement: st,
+            })}
+            className="flex items-center gap-space-xs rounded-lg bg-primary-container px-space-md py-2 text-label-md text-on-primary-container shadow-card transition-all hover:bg-secondary active:scale-[0.98]"
+          >
+            <FileText size={17} /> Export PDF
           </button>
           <button onClick={handleExport} className="flex items-center gap-space-xs rounded-lg border border-surface-container bg-surface-container-lowest px-space-md py-2 text-label-md shadow-soft hover:bg-surface-container-low active:scale-[0.98]">
             <Table2 size={17} className="text-emerald-600" /> Excel (CSV)

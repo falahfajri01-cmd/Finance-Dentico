@@ -20,6 +20,12 @@ export interface PnlPdfData {
   statement: PnlStatement;
 }
 
+function drawCenter(page: any, text: string, y: number, font: any, size: number, color = rgb(0, 0, 0)) {
+  const w = font.widthOfTextAtSize(text, size);
+  const x = (page.getSize().width - w) / 2;
+  page.drawText(text, { x, y, size, font, color });
+}
+
 function drawRight(page: any, text: string, x: number, y: number, font: any, size: number, color = rgb(0, 0, 0)) {
   const w = font.widthOfTextAtSize(text, size);
   page.drawText(text, { x: x - w, y, size, font, color });
@@ -69,16 +75,16 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   const brand = extractBrand(data.entity);
   const branch = extractBranch(data.branch);
 
-  // ── HEADER ────────────────────────────────────────────────────────
-  drawLeft(page, `${brand} DENTAL`, margin, y, fontBold, 18, rgb(0, 0.2, 0.5));
+  // ── HEADER (centered) ─────────────────────────────────────────────
+  drawCenter(page, `${brand} DENTAL`, y, fontBold, 18, rgb(0, 0.2, 0.5));
   y -= 26;
-  drawLeft(page, `${brand} - ${branch}`, margin, y, font, 13, rgb(0.2, 0.2, 0.2));
+  drawCenter(page, `${brand} - ${branch}`, y, font, 13, rgb(0.2, 0.2, 0.2));
   y -= 20;
-  drawLeft(page, "LAPORAN LABA RUGI", margin, y, fontBold, 16, rgb(0, 0, 0));
+  drawCenter(page, "LAPORAN LABA RUGI", y, fontBold, 16, rgb(0, 0, 0));
   y -= 24;
 
   const periodHeader = formatPeriodHeader(data.period, data.periodLabel);
-  drawLeft(page, periodHeader, margin, y, font, 12, rgb(0.3, 0.3, 0.3));
+  drawCenter(page, periodHeader, y, font, 12, rgb(0.3, 0.3, 0.3));
   y -= 10;
 
   page.drawLine({
@@ -171,26 +177,28 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
     const { height: h } = page.getSize();
     y = h - margin;
   }
-  page.drawLine({
-    start: { x: margin, y: y + 4 },
-    end: { x: width - margin, y: y + 4 },
-    thickness: 0.5,
-    color: rgb(0.6, 0.6, 0.6),
-  });
   drawLeft(page, "TOTAL BEBAN OPERASIONAL", margin, y, fontBold, totalSize);
   drawRight(page, fmtRpFull(data.statement.bebanOps).replace("Rp ", ""), colAmount, y, fontBold, totalSize);
-  y -= rowHeight + 8;
-
-  // LABA OPERASIONAL
+  y -= rowHeight;
   page.drawLine({
-    start: { x: margin, y: y + 4 },
-    end: { x: width - margin, y: y + 4 },
+    start: { x: margin, y: y + 2 },
+    end: { x: width - margin, y: y + 2 },
     thickness: 0.5,
     color: rgb(0.6, 0.6, 0.6),
   });
+  y -= rowHeight + 4;
+
+  // LABA OPERASIONAL
   drawLeft(page, "LABA OPERASIONAL", margin, y, fontBold, totalSize, rgb(0, 0.2, 0.5));
   drawRight(page, fmtRpFull(data.statement.labaOperasional).replace("Rp ", ""), colAmount, y, fontBold, totalSize, rgb(0, 0.2, 0.5));
-  y -= rowHeight + 8;
+  y -= rowHeight;
+  page.drawLine({
+    start: { x: margin, y: y + 2 },
+    end: { x: width - margin, y: y + 2 },
+    thickness: 0.5,
+    color: rgb(0.6, 0.6, 0.6),
+  });
+  y -= rowHeight + 4;
 
   // NON-OPERASIONAL
   drawSection(data.statement.sections.find(s => s.key === "nonops")!, false);

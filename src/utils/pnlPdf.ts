@@ -1,16 +1,11 @@
 /* ────────────────────────────────────────────────────────────────────
- * PDF Export — Laporan Laba Rugi
- * Generated to match user's template specification:
- *   Line 1: {Brand} DENTAL
- *   Line 2: {Brand} - {Branch}
- *   Line 3: Laporan Laba Rugi
- *   Line 4: Periode {Month Year}
- *   Then full P&L table
+ * PDF Export — Laporan Laba Rugi (Template Matching)
+ * Two-page layout matching the provided template specification.
  * ──────────────────────────────────────────────────────────────────── */
 
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
 import type { PnlStatement, PnlSection } from "../data/pnl";
-import { fmtRpFull } from "../data/finance";
+
 
 export interface PnlPdfData {
   entity: string;
@@ -20,10 +15,15 @@ export interface PnlPdfData {
   statement: PnlStatement;
 }
 
+/* ── Helpers ──────────────────────────────────────────────────────── */
+
+function fmt(v: number): string {
+  return new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.abs(v));
+}
+
 function drawCenter(page: any, text: string, y: number, font: any, size: number, color = rgb(0, 0, 0)) {
   const w = font.widthOfTextAtSize(text, size);
-  const x = (page.getSize().width - w) / 2;
-  page.drawText(text, { x, y, size, font, color });
+  page.drawText(text, { x: (page.getSize().width - w) / 2, y, size, font, color });
 }
 
 function drawRight(page: any, text: string, x: number, y: number, font: any, size: number, color = rgb(0, 0, 0)) {
@@ -35,12 +35,13 @@ function drawLeft(page: any, text: string, x: number, y: number, font: any, size
   page.drawText(text, { x, y, size, font, color });
 }
 
-export function formatPeriodHeader(period: string, periodLabel: string): string {
-  if (period === "Q3" || period === "2026-Q3") return `Periode ${periodLabel}`;
-  if (/^\d{4}-\d{2}$/.test(period)) return `Periode ${periodLabel}`;
-  if (/^\d{4}-Q\d$/.test(period)) return `Periode ${periodLabel}`;
-  if (/^\d{4}-YTD$/.test(period)) return `Periode ${periodLabel}`;
-  return `Periode ${periodLabel}`;
+function line(page: any, x1: number, y: number, x2: number, thickness = 0.5, color = rgb(0, 0, 0)) {
+  page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, thickness, color });
+}
+
+function doubleLine(page: any, x1: number, y: number, x2: number, gap = 3, thickness = 0.5, color = rgb(0, 0, 0)) {
+  line(page, x1, y, x2, thickness, color);
+  line(page, x1, y - gap, x2, thickness, color);
 }
 
 function extractBrand(entity: string): string {
@@ -54,191 +55,200 @@ function extractBranch(branch: string): string {
   return parts.length > 1 ? parts.slice(1).join(" - ").toUpperCase() : branch.toUpperCase();
 }
 
+/* ── Main export ──────────────────────────────────────────────────── */
+
 export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
-  let page = pdfDoc.addPage(PageSizes.A4);
-  const { width, height } = page.getSize();
-  const margin = 50;
+  const page1 = pdfDoc.addPage(PageSizes.A4);
+  const page2 = pdfDoc.addPage(PageSizes.A4);
+
+  const { width, height } = page1.getSize();
+  const margin = 60;
   const colLabel = margin;
   const colAmount = width - margin - 5;
-  const rowHeight = 20;
-  const indentStep = 15;
-  const headerSize = 10;
-  const bodySize = 9;
-  const totalSize = 10;
-  let y = height - margin;
 
   const brand = extractBrand(data.entity);
   const branch = extractBranch(data.branch);
+  const st = data.statement;
 
-  // ── HEADER (centered) ─────────────────────────────────────────────
-  drawCenter(page, `${brand} DENTAL`, y, fontBold, 18, rgb(0, 0.2, 0.5));
-  y -= 26;
-  drawCenter(page, `${brand} - ${branch}`, y, font, 13, rgb(0.2, 0.2, 0.2));
-  y -= 20;
-  drawCenter(page, "LAPORAN LABA RUGI", y, fontBold, 16, rgb(0, 0, 0));
-  y -= 24;
+  /* ── Header drawing (reusable) ──────────────────────────────────── */
+  function drawHeader(page: any) {
+    let y = height - margin;
+    drawCenter(page, `${brand} DENTAL`, y, fontBold, 18);
+    y -= 26;
+    drawCenter(page, "LAPORAN LABA RUGI", y, fontBold, 14);
+    y -= 22;
+    drawCenter(page, `${brand} - ${branch}`, y, font, 11);
+    y -= 20;
+    drawCenter(page, `Periode ${data.periodLabel}`, y, fontBold, 11);
+    y -= 8;
+    line(page, margin, y, width - margin, 1);
+    y -= 14;
+    return y;
+  }
 
-  const periodHeader = formatPeriodHeader(data.period, data.periodLabel);
-  drawCenter(page, periodHeader, y, font, 12, rgb(0.3, 0.3, 0.3));
-  y -= 10;
+  /* ── Draw a section with given codes ────────────────────────────── */
+  function drawSection(
+    page: any,
+    y: number,
+    sec: PnlSection | null,
+    codes: string[],
+    options: { title: string; indent?: boolean; isHeader?: boolean; isTotal?: boolean; isEmpty?: boolean } = { title: "" }
+  ): number {
+    const { title, indent = false, isHeader = false, isTotal = false, isEmpty = false } = options;
+    const xLabel = colLabel + (indent ? 20 : 0);
+    const titleSize = isHeader ? 11 : 11;
+    const rowHeight = 18;
+    const gap = 4;
 
-  page.drawLine({
-    start: { x: margin, y: y },
-    end: { x: width - margin, y: y },
-    thickness: 1,
-    color: rgb(0.6, 0.6, 0.6),
-  });
-  y -= 18;
-
-  function drawSection(sec: PnlSection, isBebanChild: boolean) {
-    if (y < margin + 60) {
-      page = pdfDoc.addPage(PageSizes.A4);
-      const { height: h } = page.getSize();
-      y = h - margin;
+    if (isTotal) {
+      // Total line with double underline
+      drawLeft(page, title, xLabel, y, fontBold, titleSize);
+      const totalVal = sec ? Math.abs(sec.total) : 0;
+      drawRight(page, fmt(totalVal), colAmount, y, fontBold, titleSize);
+      y -= rowHeight;
+      doubleLine(page, margin, y, width - margin, 3);
+      y -= gap + 4;
+      return y;
     }
 
-    const secTitle = sec.key === "pendapatan" ? "PENDAPATAN USAHA"
-      : sec.key === "langsung" ? "BIAYA LANGSUNG"
-      : sec.key === "nonops" ? "PENDAPATAN / BEBAN NON-OPERASIONAL"
-      : sec.title.replace("BIAYA ", "").toUpperCase();
+    if (isEmpty) {
+      // Empty section header (Penyusutan)
+      drawLeft(page, title, xLabel, y, fontBold, titleSize);
+      y -= rowHeight + gap;
+      return y;
+    }
 
-    drawLeft(page, secTitle, margin, y, fontBold, headerSize, rgb(0, 0.2, 0.5));
+    if (isHeader) {
+      drawLeft(page, title, xLabel, y, fontBold, titleSize);
+      y -= rowHeight + gap;
+      return y;
+    }
+
+    // Section header
+    drawLeft(page, title, xLabel, y, fontBold, titleSize);
     y -= rowHeight;
 
-    for (const row of sec.rows) {
-      if (y < margin + 30) {
-        page = pdfDoc.addPage(PageSizes.A4);
-        const { height: h } = page.getSize();
-        y = h - margin;
-      }
-
-      const indent = isBebanChild ? indentStep : 0;
-      const labelX = colLabel + indent;
-
-      drawLeft(page, row.name, labelX, y, row.drillable ? font : fontOblique, bodySize, rgb(0, 0, 0));
-      drawRight(page, fmtRpFull(row.amount).replace("Rp ", ""), colAmount, y, font, bodySize);
+    // Items
+    for (const code of codes) {
+      const row = sec?.rows.find((r) => r.code === code);
+      const name = row?.name ?? code;
+      const amount = row?.amount ?? 0;
+      drawLeft(page, name, xLabel + 10, y, font, 10);
+      drawRight(page, fmt(amount), colAmount, y, font, 10);
       y -= rowHeight;
     }
 
-    if (y < margin + 30) {
-      page = pdfDoc.addPage(PageSizes.A4);
-      const { height: h } = page.getSize();
-      y = h - margin;
+    // Subtotal
+    if (sec && codes.length > 0) {
+      const subLabel = `Total ${title.replace("BEBAN ", "").replace("BIAYA ", "")}`;
+      drawLeft(page, subLabel, xLabel, y, fontBold, 10);
+      drawRight(page, fmt(Math.abs(sec.total)), colAmount, y, fontBold, 10);
+      y -= rowHeight;
+      line(page, margin + (indent ? 20 : 0), y, width - margin, 0.5);
+      y -= gap;
     }
 
-    const subLabel = sec.key === "pendapatan" ? "TOTAL PENDAPATAN"
-      : sec.key === "langsung" ? "TOTAL BEBAN LANGSUNG"
-      : sec.key === "nonops" ? "TOTAL PENDAPATAN / BEBAN NON-OPERASIONAL"
-      : `TOTAL ${sec.title.replace("BIAYA ", "").toUpperCase()}`;
-
-    drawLeft(page, subLabel, margin, y, fontBold, totalSize);
-    drawRight(page, fmtRpFull(Math.abs(sec.total)).replace("Rp ", ""), colAmount, y, fontBold, totalSize);
-    y -= rowHeight + 4;
+    y -= gap;
+    return y;
   }
 
-  // ── Draw all sections ───────────────────────────────────────────
-  drawSection(data.statement.sections.find(s => s.key === "pendapatan")!, false);
-  drawSection(data.statement.sections.find(s => s.key === "langsung")!, false);
-
-  // LABA KOTOR
-  if (y < margin + 30) {
-    page = pdfDoc.addPage(PageSizes.A4);
-    const { height: h } = page.getSize();
-    y = h - margin;
+  /* ── Get section by key ─────────────────────────────────────────── */
+  function getSec(key: string): PnlSection | null {
+    return st.sections.find((s) => s.key === key) ?? null;
   }
-  page.drawLine({
-    start: { x: margin, y: y + 4 },
-    end: { x: width - margin, y: y + 4 },
-    thickness: 0.5,
-    color: rgb(0.6, 0.6, 0.6),
-  });
-  drawLeft(page, "LABA KOTOR", margin, y, fontBold, totalSize, rgb(0, 0.2, 0.5));
-  drawRight(page, fmtRpFull(data.statement.labaKotor).replace("Rp ", ""), colAmount, y, fontBold, totalSize, rgb(0, 0.2, 0.5));
-  y -= rowHeight + 8;
 
-  // BEBAN OPERASIONAL header
-  drawLeft(page, "BEBAN OPERASIONAL", margin, y, fontBold, headerSize, rgb(0.5, 0.3, 0));
-  y -= rowHeight;
+  /* ── PAGE 1 ─────────────────────────────────────────────────────── */
+  let y = drawHeader(page1);
 
-  // Children
-  const bebanChildren = ["sdm", "ops", "maint", "adm", "mkt"];
-  bebanChildren.forEach(key => {
-    drawSection(data.statement.sections.find(s => s.key === key)!, true);
-  });
+  // Pendapatan Usaha
+  y = drawSection(page1, y, getSec("pendapatan"), ["4101", "4301"], { title: "PENDAPATAN USAHA" });
+  line(page1, margin, y, width - margin, 0.5); // Garis 2
+  y -= 8;
 
-  // TOTAL BEBAN OPERASIONAL
-  if (y < margin + 30) {
-    page = pdfDoc.addPage(PageSizes.A4);
-    const { height: h } = page.getSize();
-    y = h - margin;
-  }
-  drawLeft(page, "TOTAL BEBAN OPERASIONAL", margin, y, fontBold, totalSize);
-  drawRight(page, fmtRpFull(data.statement.bebanOps).replace("Rp ", ""), colAmount, y, fontBold, totalSize);
-  y -= rowHeight;
-  page.drawLine({
-    start: { x: margin, y: y + 2 },
-    end: { x: width - margin, y: y + 2 },
-    thickness: 0.5,
-    color: rgb(0.6, 0.6, 0.6),
-  });
-  y -= rowHeight + 4;
+  // Beban Langsung
+  y = drawSection(page1, y, getSec("langsung"), ["6001", "6002", "6003", "6004"], { title: "BEBAN LANGSUNG" });
+  line(page1, margin, y, width - margin, 0.5); // Garis 3
+  y -= 8;
 
-  // LABA OPERASIONAL
-  drawLeft(page, "LABA OPERASIONAL", margin, y, fontBold, totalSize, rgb(0, 0.2, 0.5));
-  drawRight(page, fmtRpFull(data.statement.labaOperasional).replace("Rp ", ""), colAmount, y, fontBold, totalSize, rgb(0, 0.2, 0.5));
-  y -= rowHeight;
-  page.drawLine({
-    start: { x: margin, y: y + 2 },
-    end: { x: width - margin, y: y + 2 },
-    thickness: 0.5,
-    color: rgb(0.6, 0.6, 0.6),
-  });
-  y -= rowHeight + 4;
-
-  // NON-OPERASIONAL
-  drawSection(data.statement.sections.find(s => s.key === "nonops")!, false);
-
-  // LABA BERSIH
-  if (y < margin + 50) {
-    page = pdfDoc.addPage(PageSizes.A4);
-    const { height: h } = page.getSize();
-    y = h - margin;
-  }
-  page.drawLine({
-    start: { x: margin, y: y + 8 },
-    end: { x: width - margin, y: y + 8 },
-    thickness: 1.5,
-    color: rgb(0, 0.2, 0.5),
-  });
+  // Laba Kotor
+  drawLeft(page1, "LABA KOTOR", colLabel, y, fontBold, 11);
+  drawRight(page1, fmt(st.labaKotor), colAmount, y, fontBold, 11);
+  y -= 18;
+  doubleLine(page1, margin, y, width - margin, 3); // Garis 4 (ganda)
   y -= 10;
-  drawLeft(page, "LABA BERSIH", margin, y, fontBold, 14, rgb(0, 0.2, 0.5));
-  drawRight(page, fmtRpFull(data.statement.labaBersih).replace("Rp ", ""), colAmount, y, fontBold, 14, rgb(0, 0.2, 0.5));
+
+  // Beban Operasional Header
+  drawLeft(page1, "BEBAN OPERASIONAL", colLabel, y, fontBold, 11);
   y -= 22;
 
-  const marginPct = data.statement.pendapatan !== 0
-    ? ((data.statement.labaBersih / data.statement.pendapatan) * 100).toFixed(2)
-    : "0.00";
-  drawLeft(page, `Net Margin: ${marginPct}%`, margin, y, fontOblique, 9, rgb(0.4, 0.4, 0.4));
-  y -= 30;
+  // Biaya Gaji & SDM
+  y = drawSection(page1, y, getSec("sdm"), ["6102", "6103", "6104", "6105", "6106", "6107", "6108", "6109", "6110"], { title: "BIAYA GAJI & SDM", indent: true });
+  line(page1, margin + 20, y, width - margin, 0.5); // Garis 5
+  y -= 6;
 
-  // FOOTER
-  page.drawLine({
-    start: { x: margin, y: y },
-    end: { x: width - margin, y: y },
-    thickness: 0.5,
-    color: rgb(0.7, 0.7, 0.7),
-  });
-  y -= 16;
+  // Beban Operasional (detail)
+  y = drawSection(page1, y, getSec("ops"), ["6201", "6202", "6203", "6204", "6205", "6206", "6207", "6208", "6209", "6210", "6211", "6212", "6213", "6214", "6215", "6216", "6217", "6218"], { title: "BEBAN OPERASIONAL", indent: true });
+  line(page1, margin + 20, y, width - margin, 0.5); // Garis 6
+  y -= 6;
 
+  // Biaya Pemeliharaan
+  y = drawSection(page1, y, getSec("maint"), ["6301", "6302", "6303", "6304", "6305"], { title: "BIAYA PEMELIHARAAN", indent: true });
+  line(page1, margin + 20, y, width - margin, 0.5); // Garis 7
+  y -= 6;
+
+  // Beban Administrasi
+  y = drawSection(page1, y, getSec("adm"), ["6401", "6402", "6403", "6404", "6405", "6406", "6407", "6408"], { title: "BEBAN ADMINISTRASI", indent: true });
+  line(page1, margin + 20, y, width - margin, 0.5); // Garis 8
+  y -= 10;
+
+  /* ── PAGE 2 ─────────────────────────────────────────────────────── */
+  y = margin;
+
+  // Penyusutan & Amortisasi (empty section header)
+  drawLeft(page2, "PENYUSUTAN & AMORTISASI", colLabel + 20, y, fontBold, 11);
+  y -= 18;
+  // No items - just spacing
+  y -= 6;
+
+  // Beban Marketing
+  y = drawSection(page2, y, getSec("mkt"), ["6501", "6502", "6503", "6504", "6505", "6506"], { title: "BEBAN MARKETING", indent: true });
+  y -= 4;
+
+  // Total Beban Operasional
+  drawLeft(page2, "TOTAL BEBAN OPERASIONAL", colLabel, y, fontBold, 11);
+  drawRight(page2, fmt(st.bebanOps), colAmount, y, fontBold, 11);
+  y -= 18;
+  line(page2, margin, y, width - margin, 0.5);
+  y -= 8;
+
+  // Laba Operasional
+  drawLeft(page2, "LABA OPERASIONAL", colLabel, y, fontBold, 11);
+  drawRight(page2, fmt(st.labaOperasional), colAmount, y, fontBold, 11);
+  y -= 18;
+  doubleLine(page2, margin, y, width - margin, 3);
+  y -= 10;
+
+  // Non-operasional
+  y = drawSection(page2, y, getSec("nonops"), ["4302", "6601", "6602", "6603"], { title: "PENDAPATAN / BEBAN NON-OPERASIONAL" });
+  line(page2, margin, y, width - margin, 0.5);
+  y -= 8;
+
+  // Laba Bersih
+  drawLeft(page2, "LABA BERSIH", colLabel, y, fontBold, 13);
+  drawRight(page2, fmt(st.labaBersih), colAmount, y, fontBold, 13);
+  y -= 22;
+  doubleLine(page2, margin, y, width - margin, 3);
+  y -= 10;
+
+  /* ── Footer (page 2) ────────────────────────────────────────────── */
   const now = new Date();
   const generated = `Dicetak: ${now.toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })} ${now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB`;
-  drawLeft(page, generated, margin, y, fontOblique, 8, rgb(0.5, 0.5, 0.5));
-  drawRight(page, "Dentico Finance Core", colAmount, y, fontOblique, 8, rgb(0.5, 0.5, 0.5));
+  drawLeft(page2, generated, margin, y, font, 8, rgb(0.5, 0.5, 0.5));
+  drawRight(page2, "Dentico Finance Core", colAmount, y, font, 8, rgb(0.5, 0.5, 0.5));
 
   return pdfDoc.save();
 }

@@ -6,7 +6,6 @@
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
 import type { PnlStatement, PnlSection } from "../data/pnl";
 
-
 export interface PnlPdfData {
   entity: string;
   branch: string;
@@ -18,6 +17,7 @@ export interface PnlPdfData {
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 function fmt(v: number): string {
+  if (v === 0) return "";
   return new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.abs(v));
 }
 
@@ -74,8 +74,17 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   const branch = extractBranch(data.branch);
   const st = data.statement;
 
-  /* ── Header drawing (reusable) ──────────────────────────────────── */
-  function drawHeader(page: any) {
+  /* ── Layout constants ───────────────────────────────────────────── */
+  const ROW_H = 18;
+  const GAP_SM = 4;
+  const GAP_MD = 8;
+  const GAP_LG = 12;
+  const INDENT_SEC = 0;
+  const INDENT_SUB = 20;
+  const INDENT_ACC = 30;
+
+  /* ── Header (page 1 only) ───────────────────────────────────────── */
+  function drawHeader(page: any): number {
     let y = height - margin;
     drawCenter(page, `${brand} DENTAL`, y, fontBold, 18);
     y -= 26;
@@ -90,70 +99,44 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
     return y;
   }
 
-  /* ── Draw a section with given codes ────────────────────────────── */
-  function drawSection(
-    page: any,
-    y: number,
-    sec: PnlSection | null,
-    codes: string[],
-    options: { title: string; indent?: boolean; isHeader?: boolean; isTotal?: boolean; isEmpty?: boolean } = { title: "" }
-  ): number {
-    const { title, indent = false, isHeader = false, isTotal = false, isEmpty = false } = options;
-    const xLabel = colLabel + (indent ? 20 : 0);
-    const titleSize = isHeader ? 11 : 11;
-    const rowHeight = 18;
-    const gap = 4;
+  /* ── Draw section header ────────────────────────────────────────── */
+  function drawSectionHeader(page: any, y: number, title: string, indent: number, size = 11): number {
+    drawLeft(page, title, colLabel + indent, y, fontBold, size);
+    return y - ROW_H;
+  }
 
-    if (isTotal) {
-      // Total line with double underline
-      drawLeft(page, title, xLabel, y, fontBold, titleSize);
-      const totalVal = sec ? Math.abs(sec.total) : 0;
-      drawRight(page, fmt(totalVal), colAmount, y, fontBold, titleSize);
-      y -= rowHeight;
-      doubleLine(page, margin, y, width - margin, 3);
-      y -= gap + 4;
-      return y;
-    }
+  /* ── Draw account row ───────────────────────────────────────────── */
+  function drawAccountRow(page: any, y: number, name: string, amount: number, indent: number, isBold = false): number {
+    drawLeft(page, name, colLabel + indent, y, isBold ? fontBold : font, 10);
+    drawRight(page, fmt(amount), colAmount, y, isBold ? fontBold : font, 10);
+    return y - ROW_H;
+  }
 
-    if (isEmpty) {
-      // Empty section header (Penyusutan)
-      drawLeft(page, title, xLabel, y, fontBold, titleSize);
-      y -= rowHeight + gap;
-      return y;
-    }
+  /* ── Draw subtotal row with single underline ────────────────────── */
+  function drawSubtotal(page: any, y: number, label: string, amount: number, indent: number, lineStart: number): number {
+    drawLeft(page, label, colLabel + indent, y, fontBold, 10);
+    drawRight(page, fmt(amount), colAmount, y, fontBold, 10);
+    y -= ROW_H;
+    line(page, lineStart, y, width - margin, 0.5);
+    return y - GAP_SM;
+  }
 
-    if (isHeader) {
-      drawLeft(page, title, xLabel, y, fontBold, titleSize);
-      y -= rowHeight + gap;
-      return y;
-    }
+  /* ── Draw double underline total (Laba Kotor, Laba Operasional, Laba Bersih) ───── */
+  function drawDoubleTotal(page: any, y: number, label: string, amount: number, indent: number, fontSize = 11): number {
+    drawLeft(page, label, colLabel + indent, y, fontBold, fontSize);
+    drawRight(page, fmt(amount), colAmount, y, fontBold, fontSize);
+    y -= ROW_H + 2;
+    doubleLine(page, margin, y, width - margin, 3);
+    return y - GAP_LG;
+  }
 
-    // Section header
-    drawLeft(page, title, xLabel, y, fontBold, titleSize);
-    y -= rowHeight;
-
-    // Items
-    for (const code of codes) {
-      const row = sec?.rows.find((r) => r.code === code);
-      const name = row?.name ?? code;
-      const amount = row?.amount ?? 0;
-      drawLeft(page, name, xLabel + 10, y, font, 10);
-      drawRight(page, fmt(amount), colAmount, y, font, 10);
-      y -= rowHeight;
-    }
-
-    // Subtotal
-    if (sec && codes.length > 0) {
-      const subLabel = `Total ${title.replace("BEBAN ", "").replace("BIAYA ", "")}`;
-      drawLeft(page, subLabel, xLabel, y, fontBold, 10);
-      drawRight(page, fmt(Math.abs(sec.total)), colAmount, y, fontBold, 10);
-      y -= rowHeight;
-      line(page, margin + (indent ? 20 : 0), y, width - margin, 0.5);
-      y -= gap;
-    }
-
-    y -= gap;
-    return y;
+  /* ── Draw grand total with single line (TOTAL BEBAN OPERASIONAL) ─────────────── */
+  function drawGrandTotal(page: any, y: number, label: string, amount: number): number {
+    drawLeft(page, label, colLabel, y, fontBold, 11);
+    drawRight(page, fmt(amount), colAmount, y, fontBold, 11);
+    y -= ROW_H;
+    line(page, margin, y, width - margin, 0.5);
+    return y - GAP_MD;
   }
 
   /* ── Get section by key ─────────────────────────────────────────── */
@@ -161,94 +144,128 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
     return st.sections.find((s) => s.key === key) ?? null;
   }
 
-  /* ── PAGE 1 ─────────────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════════
+   * PAGE 1
+   * ═══════════════════════════════════════════════════════════════════ */
   let y = drawHeader(page1);
 
-  // Pendapatan Usaha
-  y = drawSection(page1, y, getSec("pendapatan"), ["4101", "4301"], { title: "PENDAPATAN USAHA" });
-  line(page1, margin, y, width - margin, 0.5); // Garis 2
-  y -= 8;
+  // 1. PENDAPATAN USAHA
+  y = drawSectionHeader(page1, y, "PENDAPATAN USAHA", INDENT_SEC);
+  const pendSec = getSec("pendapatan");
+  for (const code of ["4101", "4301"]) {
+    const row = pendSec?.rows.find((r) => r.code === code);
+    if (row) y = drawAccountRow(page1, y, row.name, row.amount, INDENT_ACC);
+  }
+  y = drawSubtotal(page1, y, "TOTAL PENDAPATAN USAHA", Math.abs(pendSec?.total ?? 0), INDENT_SEC, margin);
+  y -= GAP_MD;
 
-  // Beban Langsung
-  y = drawSection(page1, y, getSec("langsung"), ["6001", "6002", "6003", "6004"], { title: "BEBAN LANGSUNG" });
-  line(page1, margin, y, width - margin, 0.5); // Garis 3
-  y -= 8;
+  // 2. BEBAN LANGSUNG
+  y = drawSectionHeader(page1, y, "BEBAN LANGSUNG", INDENT_SEC);
+  const lngSec = getSec("langsung");
+  for (const code of ["6001", "6002", "6003", "6004"]) {
+    const row = lngSec?.rows.find((r) => r.code === code);
+    if (row) y = drawAccountRow(page1, y, row.name, row.amount, INDENT_ACC);
+  }
+  y = drawSubtotal(page1, y, "TOTAL BEBAN LANGSUNG", Math.abs(lngSec?.total ?? 0), INDENT_SEC, margin);
+  y -= GAP_MD;
 
-  // Laba Kotor
-  drawLeft(page1, "LABA KOTOR", colLabel, y, fontBold, 11);
-  drawRight(page1, fmt(st.labaKotor), colAmount, y, fontBold, 11);
-  y -= 18;
-  doubleLine(page1, margin, y, width - margin, 3); // Garis 4 (ganda)
-  y -= 10;
+  // 3. LABA KOTOR (double underline)
+  y = drawDoubleTotal(page1, y, "LABA KOTOR", st.labaKotor, INDENT_SEC);
+  y -= GAP_MD;
 
-  // Beban Operasional Header
-  drawLeft(page1, "BEBAN OPERASIONAL", colLabel, y, fontBold, 11);
-  y -= 22;
+  // 4. BEBAN OPERASIONAL (group header)
+  y = drawSectionHeader(page1, y, "BEBAN OPERASIONAL", INDENT_SEC);
+  y -= GAP_SM;
 
-  // Biaya Gaji & SDM
-  y = drawSection(page1, y, getSec("sdm"), ["6102", "6103", "6104", "6105", "6106", "6107", "6108", "6109", "6110"], { title: "BIAYA GAJI & SDM", indent: true });
-  line(page1, margin + 20, y, width - margin, 0.5); // Garis 5
-  y -= 6;
+  // 4a. BIAYA GAJI & SDM
+  y = drawSectionHeader(page1, y, "BIAYA GAJI & SDM", INDENT_SUB);
+  const sdmSec = getSec("sdm");
+  for (const code of ["6102", "6103", "6104", "6105", "6106", "6107", "6108", "6109", "6110"]) {
+    const row = sdmSec?.rows.find((r) => r.code === code);
+    if (row) y = drawAccountRow(page1, y, row.name, row.amount, INDENT_ACC);
+  }
+  y = drawSubtotal(page1, y, "Total Gaji & SDM", Math.abs(sdmSec?.total ?? 0), INDENT_SUB, margin + INDENT_SUB);
+  y -= GAP_MD;
 
-  // Beban Operasional (detail)
-  y = drawSection(page1, y, getSec("ops"), ["6201", "6202", "6203", "6204", "6205", "6206", "6207", "6208", "6209", "6210", "6211", "6212", "6213", "6214", "6215", "6216", "6217", "6218"], { title: "BEBAN OPERASIONAL", indent: true });
-  line(page1, margin + 20, y, width - margin, 0.5); // Garis 6
-  y -= 6;
+  // 4b. BEBAN OPERASIONAL (biaya umum)
+  y = drawSectionHeader(page1, y, "BEBAN OPERASIONAL", INDENT_SUB);
+  const opsSec = getSec("ops");
+  for (const code of ["6201", "6202", "6203", "6204", "6205", "6206", "6207", "6208", "6209", "6210", "6211", "6212", "6213", "6214", "6215", "6216", "6217", "6218"]) {
+    const row = opsSec?.rows.find((r) => r.code === code);
+    if (row) y = drawAccountRow(page1, y, row.name, row.amount, INDENT_ACC);
+  }
+  y = drawSubtotal(page1, y, "Total Beban Operasional", Math.abs(opsSec?.total ?? 0), INDENT_SUB, margin + INDENT_SUB);
+  y -= GAP_MD;
 
-  // Biaya Pemeliharaan
-  y = drawSection(page1, y, getSec("maint"), ["6301", "6302", "6303", "6304", "6305"], { title: "BIAYA PEMELIHARAAN", indent: true });
-  line(page1, margin + 20, y, width - margin, 0.5); // Garis 7
-  y -= 6;
+  // 4c. BIAYA PEMELIHARAAN
+  y = drawSectionHeader(page1, y, "BIAYA PEMELIHARAAN", INDENT_SUB);
+  const maintSec = getSec("maint");
+  for (const code of ["6301", "6302", "6303", "6304", "6305"]) {
+    const row = maintSec?.rows.find((r) => r.code === code);
+    if (row) y = drawAccountRow(page1, y, row.name, row.amount, INDENT_ACC);
+  }
+  y = drawSubtotal(page1, y, "Total Biaya Pemeliharaan", Math.abs(maintSec?.total ?? 0), INDENT_SUB, margin + INDENT_SUB);
+  y -= GAP_MD;
 
-  // Beban Administrasi
-  y = drawSection(page1, y, getSec("adm"), ["6401", "6402", "6403", "6404", "6405", "6406", "6407", "6408"], { title: "BEBAN ADMINISTRASI", indent: true });
-  line(page1, margin + 20, y, width - margin, 0.5); // Garis 8
-  y -= 10;
+  // 4d. BEBAN ADMINISTRASI
+  y = drawSectionHeader(page1, y, "BEBAN ADMINISTRASI", INDENT_SUB);
+  const admSec = getSec("adm");
+  for (const code of ["6401", "6402", "6403", "6404", "6405", "6406", "6407", "6408"]) {
+    const row = admSec?.rows.find((r) => r.code === code);
+    if (row) y = drawAccountRow(page1, y, row.name, row.amount, INDENT_ACC);
+  }
+  y = drawSubtotal(page1, y, "Total Biaya Administrasi", Math.abs(admSec?.total ?? 0), INDENT_SUB, margin + INDENT_SUB);
+  y -= GAP_LG;
 
-  /* ── PAGE 2 ─────────────────────────────────────────────────────── */
-  y = margin;
+  // Page 1 ends here after Total Biaya Administrasi
 
-  // Penyusutan & Amortisasi (empty section header)
-  drawLeft(page2, "PENYUSUTAN & AMORTISASI", colLabel + 20, y, fontBold, 11);
-  y -= 18;
-  // No items - just spacing
-  y -= 6;
+  /* ═══════════════════════════════════════════════════════════════════
+   * PAGE 2 - Fresh coordinate system starting from top
+   * ═══════════════════════════════════════════════════════════════════ */
+  let y2 = height - margin;
 
-  // Beban Marketing
-  y = drawSection(page2, y, getSec("mkt"), ["6501", "6502", "6503", "6504", "6505", "6506"], { title: "BEBAN MARKETING", indent: true });
-  y -= 4;
+  // 5. PENYUSUTAN & AMORTISASI (header only, no accounts in seed data)
+  y2 = drawSectionHeader(page2, y2, "PENYUSUTAN & AMORTISASI", INDENT_SUB);
+  // No account rows - just the header
+  y2 -= GAP_MD;
 
-  // Total Beban Operasional
-  drawLeft(page2, "TOTAL BEBAN OPERASIONAL", colLabel, y, fontBold, 11);
-  drawRight(page2, fmt(st.bebanOps), colAmount, y, fontBold, 11);
-  y -= 18;
-  line(page2, margin, y, width - margin, 0.5);
-  y -= 8;
+  // 6. BEBAN MARKETING
+  y2 = drawSectionHeader(page2, y2, "BEBAN MARKETING", INDENT_SUB);
+  const mktSec = getSec("mkt");
+  for (const code of ["6501", "6502", "6503", "6504", "6505", "6506"]) {
+    const row = mktSec?.rows.find((r) => r.code === code);
+    if (row) y2 = drawAccountRow(page2, y2, row.name, row.amount, INDENT_ACC);
+  }
+  y2 = drawSubtotal(page2, y2, "Total Biaya Marketing", Math.abs(mktSec?.total ?? 0), INDENT_SUB, margin + INDENT_SUB);
+  y2 -= GAP_MD;
 
-  // Laba Operasional
-  drawLeft(page2, "LABA OPERASIONAL", colLabel, y, fontBold, 11);
-  drawRight(page2, fmt(st.labaOperasional), colAmount, y, fontBold, 11);
-  y -= 18;
-  doubleLine(page2, margin, y, width - margin, 3);
-  y -= 10;
+  // 7. TOTAL BEBAN OPERASIONAL (grand total of all operational expenses)
+  y2 = drawGrandTotal(page2, y2, "TOTAL BEBAN OPERASIONAL", st.bebanOps);
+  y2 -= GAP_MD;
 
-  // Non-operasional
-  y = drawSection(page2, y, getSec("nonops"), ["4302", "6601", "6602", "6603"], { title: "PENDAPATAN / BEBAN NON-OPERASIONAL" });
-  line(page2, margin, y, width - margin, 0.5);
-  y -= 8;
+  // 8. LABA OPERASIONAL (double underline)
+  y2 = drawDoubleTotal(page2, y2, "LABA OPERASIONAL", st.labaOperasional, INDENT_SEC);
+  y2 -= GAP_MD;
 
-  // Laba Bersih
-  drawLeft(page2, "LABA BERSIH", colLabel, y, fontBold, 13);
-  drawRight(page2, fmt(st.labaBersih), colAmount, y, fontBold, 13);
-  y -= 22;
-  doubleLine(page2, margin, y, width - margin, 3);
-  y -= 10;
+  // 9. PENDAPATAN / BEBAN NON-OPERASIONAL
+  y2 = drawSectionHeader(page2, y2, "PENDAPATAN / BEBAN NON-OPERASIONAL", INDENT_SEC);
+  const nonOpsSec = getSec("nonops");
+  for (const code of ["4302", "6601", "6602", "6603"]) {
+    const row = nonOpsSec?.rows.find((r) => r.code === code);
+    if (row) y2 = drawAccountRow(page2, y2, row.name, row.amount, INDENT_ACC);
+  }
+  y2 = drawSubtotal(page2, y2, "TOTAL PENDAPATAN / BEBAN NON-OPERASIONAL", Math.abs(nonOpsSec?.total ?? 0), INDENT_SEC, margin);
+  y2 -= GAP_MD;
+
+  // 10. LABA BERSIH (double underline, larger font)
+  y2 = drawDoubleTotal(page2, y2, "LABA BERSIH", st.labaBersih, INDENT_SEC, 13);
+  y2 -= GAP_LG;
 
   /* ── Footer (page 2) ────────────────────────────────────────────── */
   const now = new Date();
   const generated = `Dicetak: ${now.toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })} ${now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB`;
-  drawLeft(page2, generated, margin, y, font, 8, rgb(0.5, 0.5, 0.5));
-  drawRight(page2, "Dentico Finance Core", colAmount, y, font, 8, rgb(0.5, 0.5, 0.5));
+  drawLeft(page2, generated, margin, y2, font, 8, rgb(0.5, 0.5, 0.5));
+  drawRight(page2, "Dentico Finance Core", colAmount, y2, font, 8, rgb(0.5, 0.5, 0.5));
 
   return pdfDoc.save();
 }

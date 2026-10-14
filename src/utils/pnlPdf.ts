@@ -2,12 +2,13 @@
  * PDF Export — Laporan Laba Rugi (Template Matching)
  * Two-page layout matching tamplate baru.pdf specification.
  *
- * Layout approach:
- * - Fit-to-page with compact but readable sizing
+ * Key design decisions:
  * - Explicit page break after Total Biaya Pemeliharaan (page 1)
- * - Page 2 starts at top margin with BEBAN ADMINISTRASI
- * - All accounts shown, including zero-amount rows
+ * - Page 2 starts fresh from top margin with BEBAN ADMINISTRASI
+ * - Compact row height (12pt) + narrow gaps to fit all accounts on page 1
+ * - All accounts preserved including zero-amount rows
  * - No footer
+ * - Double lines only under LABA KOTOR and LABA BERSIH
  * ──────────────────────────────────────────────────────────────────── */
 
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
@@ -81,8 +82,8 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   const branch = extractBranch(data.branch);
   const st = data.statement;
 
-  /* ── Layout constants (compact to fit page) ─────────────────────── */
-  const ROW_H = 14;
+  /* ── Layout constants ───────────────────────────────────────────── */
+  const ROW_H = 12;
   const GAP_SM = 3;
   const GAP_MD = 5;
   const GAP_LG = 8;
@@ -114,31 +115,33 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   /* ── Draw a complete section (header + accounts + subtotal) ──────── */
   function drawSection(
     page: any,
-    y: number,
+    startY: number,
     sec: PnlSection,
     codes: string[],
-    label: string,
+    title: string,
     totalLabel: string,
     indent: number,
   ): number {
-    const xLabel = colLabel + indent;
+    const xTitle = colLabel + indent;
+    const xAcc = colLabel + indent + 6;
+    let y = startY;
 
     // Section title
-    drawLeft(page, label, xLabel, y, fontBold, 10);
+    drawLeft(page, title, xTitle, y, fontBold, 10);
     y -= ROW_H;
 
-    // Account rows
+    // Account rows (always rendered, even if amount is 0)
     for (const code of codes) {
       const row = sec.rows.find((r) => r.code === code);
       const name = row?.name ?? code;
       const amount = row?.amount ?? 0;
-      drawLeft(page, name, xLabel + 6, y, font, 9);
+      drawLeft(page, name, xAcc, y, font, 9);
       drawRight(page, fmt(amount), colAmount, y, font, 9);
       y -= ROW_H;
     }
 
-    // Subtotal
-    drawLeft(page, totalLabel, xLabel, y, fontBold, 9);
+    // Subtotal row with single underline
+    drawLeft(page, totalLabel, xTitle, y, fontBold, 9);
     drawRight(page, fmt(Math.abs(sec.total)), colAmount, y, fontBold, 9);
     y -= ROW_H;
     lineFn(page, margin + indent, y, width - margin, 0.5);
@@ -161,7 +164,7 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   y = drawSection(page1, y, lngSec!, ["6001", "6002", "6003", "6004"], "BEBAN LANGSUNG", "TOTAL BEBAN LANGSUNG", INDENT_SEC);
   y -= GAP_MD;
 
-  // 3. LABA KOTOR (double underline)
+  // 3. LABA KOTOR (double underline below nominal only)
   drawLeft(page1, "LABA KOTOR", colLabel, y, fontBold, 11);
   drawRight(page1, fmt(st.labaKotor), colAmount, y, fontBold, 11);
   y -= ROW_H + 2;
@@ -174,8 +177,7 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
 
   // 4a. BIAYA GAJI & SDM
   const sdmSec = getSec("sdm");
-  y = drawSection(page1, y, sdmSec!, ["6102", "6103", "6104", "6105", "6106", "6107", "6108", "6109", "6110"],
-    "BIAYA GAJI & SDM", "Total Gaji & SDM", INDENT_SUB);
+  y = drawSection(page1, y, sdmSec!, ["6102", "6103", "6104", "6105", "6106", "6107", "6108", "6109", "6110"], "BIAYA GAJI & SDM", "Total Gaji & SDM", INDENT_SUB);
   y -= GAP_MD;
 
   // 4b. BEBAN OPERASIONAL (biaya umum)
@@ -187,14 +189,14 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
 
   // 4c. BIAYA PEMELIHARAAN
   const maintSec = getSec("maint");
-  y = drawSection(page1, y, maintSec!, ["6301", "6302", "6303", "6304", "6305"],
-    "BIAYA PEMELIHARAAN", "Total Biaya Pemeliharaan", INDENT_SUB);
+  y = drawSection(page1, y, maintSec!, ["6301", "6302", "6303", "6304", "6305"], "BIAYA PEMELIHARAAN", "Total Biaya Pemeliharaan", INDENT_SUB);
   y -= GAP_LG;
 
-  // ── Page 1 ends here (explicit break) ─────────────────────────────
+  // ── Page 1 ends here: Total Biaya Pemeliharaan ────────────────────
+  // Explicit page break — nothing more is drawn on page 1
 
   /* ═══════════════════════════════════════════════════════════════════
-   * PAGE 2 — Fresh coordinate system from top
+   * PAGE 2 — Fresh coordinate system starting from top margin
    * ═══════════════════════════════════════════════════════════════════ */
   let y2 = height - margin;
 
@@ -205,34 +207,26 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
     "BEBAN ADMINISTRASI", "Total Biaya Administrasi", INDENT_SUB);
   y2 -= GAP_MD;
 
-  // 6. PENYUSUTAN & AMORTISASI (fixed account names, amounts from 6407/6408)
+  // 6. PENYUSUTAN & AMORTISASI (fixed template names, amounts from 6407/6408)
+  const allRows = st.sections.flatMap((s) => s.rows);
+  const row6407 = allRows.find((r) => r.code === "6407");
+  const row6408 = allRows.find((r) => r.code === "6408");
+
   drawLeft(page2, "PENYUSUTAN & AMORTISASI", colLabel + INDENT_SUB, y2, fontBold, 10);
   y2 -= ROW_H;
 
-  const allRows = st.sections.flatMap((s) => s.rows);
-  const penyusutanNames = [
-    { code: "6407", name: "Beban Penyusutan Peralatan Medis" },
-    { code: "6408", name: "Beban Amortisasi" },
+  const deprNames = [
+    { name: "Beban Penyusutan Peralatan Medis", amount: row6407?.amount ?? 0 },
+    { name: "Beban Penyusutan Peralatan Kantor", amount: 0 },
+    { name: "Beban Penyusutan Renovasi", amount: 0 },
+    { name: "Beban Amortisasi", amount: row6408?.amount ?? 0 },
   ];
-  // Search for these codes in the data; use 0 if not found
-  let deprTotal = 0;
-  for (const acc of penyusutanNames) {
-    const row = allRows.find((r) => r.code === acc.code);
-    const amount = row?.amount ?? 0;
-    drawLeft(page2, acc.name, colLabel + INDENT_ACC, y2, font, 9);
-    drawRight(page2, fmt(amount), colAmount, y2, font, 9);
-    deprTotal += amount;
-    y2 -= ROW_H;
-  }
 
-  // Additional depreciation rows (zero amounts, display only per template)
-  const zeroDeprNames = [
-    "Beban Penyusutan Peralatan Kantor",
-    "Beban Penyusutan Renovasi",
-  ];
-  for (const name of zeroDeprNames) {
-    drawLeft(page2, name, colLabel + INDENT_ACC, y2, font, 9);
-    drawRight(page2, "", colAmount, y2, font, 9);
+  let deprTotal = 0;
+  for (const acc of deprNames) {
+    drawLeft(page2, acc.name, colLabel + INDENT_ACC, y2, font, 9);
+    drawRight(page2, fmt(acc.amount), colAmount, y2, font, 9);
+    deprTotal += acc.amount;
     y2 -= ROW_H;
   }
 
@@ -245,19 +239,17 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
 
   // 7. BEBAN MARKETING
   const mktSec = getSec("mkt");
-  y2 = drawSection(page2, y2, mktSec!,
-    ["6501", "6502", "6503", "6504", "6505", "6506"],
-    "BEBAN MARKETING", "Total Biaya Marketing", INDENT_SUB);
+  y2 = drawSection(page2, y2, mktSec!, ["6501", "6502", "6503", "6504", "6505", "6506"], "BEBAN MARKETING", "Total Biaya Marketing", INDENT_SUB);
   y2 -= GAP_MD;
 
-  // 8. TOTAL BEBAN OPERASIONAL (grand total)
+  // 8. TOTAL BEBAN OPERASIONAL (grand total — single line)
   drawLeft(page2, "TOTAL BEBAN OPERASIONAL", colLabel, y2, fontBold, 11);
   drawRight(page2, fmt(st.bebanOps), colAmount, y2, fontBold, 11);
   y2 -= ROW_H;
   lineFn(page2, margin, y2, width - margin, 0.5);
   y2 -= GAP_MD;
 
-  // 9. LABA OPERASIONAL (single line)
+  // 9. LABA OPERASIONAL (single line, not double)
   drawLeft(page2, "LABA OPERASIONAL", colLabel, y2, fontBold, 11);
   drawRight(page2, fmt(st.labaOperasional), colAmount, y2, fontBold, 11);
   y2 -= ROW_H;
@@ -266,11 +258,10 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
 
   // 10. PENDAPATAN / BEBAN NON-OPERASIONAL
   const nonOpsSec = getSec("nonops");
-  y2 = drawSection(page2, y2, nonOpsSec!, ["4302", "6601", "6602", "6603"],
-    "PENDAPATAN / BEBAN NON-OPERASIONAL", "TOTAL PENDAPATAN / BEBAN NON-OPERASIONAL", INDENT_SEC);
+  y2 = drawSection(page2, y2, nonOpsSec!, ["4302", "6601", "6602", "6603"], "PENDAPATAN / BEBAN NON-OPERASIONAL", "TOTAL PENDAPATAN / BEBAN NON-OPERASIONAL", INDENT_SEC);
   y2 -= GAP_MD;
 
-  // 11. LABA BERSIH (double underline, larger font)
+  // 11. LABA BERSIH (double underline below nominal, larger font)
   drawLeft(page2, "LABA BERSIH", colLabel, y2, fontBold, 12);
   drawRight(page2, fmt(st.labaBersih), colAmount, y2, fontBold, 12);
   y2 -= ROW_H + 2;

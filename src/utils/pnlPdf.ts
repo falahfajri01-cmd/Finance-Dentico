@@ -8,7 +8,8 @@
  * - Compact row height (12pt) + narrow gaps to fit all accounts on page 1
  * - All accounts preserved including zero-amount rows
  * - No footer
- * - Double lines only under LABA KOTOR and LABA BERSIH
+ * - Double lines only under LABA KOTOR and LABA BERSIH (short, under nominal)
+ * - Extra spacing before LABA KOTOR, TOTAL BEBAN OPERASIONAL, and LABA BERSIH
  * ──────────────────────────────────────────────────────────────────── */
 
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
@@ -102,7 +103,7 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
     y -= 12;
     drawCenter(page, `Periode ${data.periodLabel}`, y, fontBold, 10);
     y -= 6;
-    lineFn(page, margin, y, width - margin, 0.8);
+    lineFn(page, margin, y, width - margin, 0.5);
     y -= 10;
     return y;
   }
@@ -149,6 +150,12 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
     return y - GAP_MD;
   }
 
+  /* ── Draw short double line under nominal only (not full width) ──── */
+  function drawShortDouble(page: any, y: number) {
+    const lineWidth = 50;
+    doubleLineFn(page, colAmount - lineWidth, y, colAmount, 3);
+  }
+
   /* ═══════════════════════════════════════════════════════════════════
    * PAGE 1 — ends after Total Biaya Pemeliharaan
    * ═══════════════════════════════════════════════════════════════════ */
@@ -162,13 +169,13 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   // 2. BEBAN LANGSUNG
   const lngSec = getSec("langsung");
   y = drawSection(page1, y, lngSec!, ["6001", "6002", "6003", "6004"], "BEBAN LANGSUNG", "TOTAL BEBAN LANGSUNG", INDENT_SEC);
-  y -= GAP_MD;
+  y -= GAP_LG;
 
-  // 3. LABA KOTOR (double underline below nominal only)
-  drawLeft(page1, "LABA KOTOR", colLabel, y, fontBold, 11);
-  drawRight(page1, fmt(st.labaKotor), colAmount, y, fontBold, 11);
+  // 3. LABA KOTOR (short double underline below nominal only, extra space before)
+  drawLeft(page1, "LABA KOTOR", colLabel, y, fontBold, 12);
+  drawRight(page1, fmt(st.labaKotor), colAmount, y, fontBold, 12);
   y -= ROW_H + 2;
-  doubleLineFn(page1, margin, y, width - margin, 3);
+  drawShortDouble(page1, y);
   y -= GAP_LG;
 
   // 4. BEBAN OPERASIONAL (group header)
@@ -240,7 +247,7 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   // 7. BEBAN MARKETING
   const mktSec = getSec("mkt");
   y2 = drawSection(page2, y2, mktSec!, ["6501", "6502", "6503", "6504", "6505", "6506"], "BEBAN MARKETING", "Total Biaya Marketing", INDENT_SUB);
-  y2 -= GAP_MD;
+  y2 -= GAP_LG;
 
   // 8. TOTAL BEBAN OPERASIONAL (grand total — single line)
   drawLeft(page2, "TOTAL BEBAN OPERASIONAL", colLabel, y2, fontBold, 11);
@@ -249,23 +256,23 @@ export async function generatePnlPdf(data: PnlPdfData): Promise<Uint8Array> {
   lineFn(page2, margin, y2, width - margin, 0.5);
   y2 -= GAP_MD;
 
-  // 9. LABA OPERASIONAL (single line, not double)
-  drawLeft(page2, "LABA OPERASIONAL", colLabel, y2, fontBold, 11);
-  drawRight(page2, fmt(st.labaOperasional), colAmount, y2, fontBold, 11);
+  // 9. LABA OPERASIONAL (single line, bold, font 12 — extra space before)
+  drawLeft(page2, "LABA OPERASIONAL", colLabel, y2, fontBold, 12);
+  drawRight(page2, fmt(st.labaOperasional), colAmount, y2, fontBold, 12);
   y2 -= ROW_H;
   lineFn(page2, margin, y2, width - margin, 0.5);
-  y2 -= GAP_MD;
+  y2 -= GAP_LG;
 
   // 10. PENDAPATAN / BEBAN NON-OPERASIONAL
   const nonOpsSec = getSec("nonops");
-  y2 = drawSection(page2, y2, nonOpsSec!, ["4302", "6601", "6602", "6603"], "PENDAPATAN / BEBAN NON-OPERASIONAL", "TOTAL PENDAPATAN / BEBAN NON-OPERASIONAL", INDENT_SEC);
-  y2 -= GAP_MD;
+  y2 = drawSection(page2, y2, nonOpsSec!, ["4302", "6601", "6602", "6603"], "PENDAPATAN / BEBAN NON-OPERASIONAL", "TOTAL PENDAPATAN / BEBAT NON-OPERASIONAL", INDENT_SEC);
+  y2 -= GAP_LG;
 
-  // 11. LABA BERSIH (double underline below nominal, larger font)
-  drawLeft(page2, "LABA BERSIH", colLabel, y2, fontBold, 12);
-  drawRight(page2, fmt(st.labaBersih), colAmount, y2, fontBold, 12);
+  // 11. LABA BERSIH (short double underline below nominal, larger font)
+  drawLeft(page2, "LABA BERSIH", colLabel, y2, fontBold, 13);
+  drawRight(page2, fmt(st.labaBersih), colAmount, y2, fontBold, 13);
   y2 -= ROW_H + 2;
-  doubleLineFn(page2, margin, y2, width - margin, 3);
+  drawShortDouble(page2, y2);
 
   return pdfDoc.save();
 }
